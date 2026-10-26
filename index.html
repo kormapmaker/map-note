@@ -40,7 +40,7 @@
   --p-metro: #2f9e44;
   --p-bus: #e8590c;
   --p-rail: #495057;
-  --p-sign: #1971c2;
+  --p-sign: #1971c2; --p-sign-hw: #2b8a3e; --p-sign-loc: #e8590c; --p-peak: #8a5a2b;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -50,7 +50,7 @@
     --grid-minor: rgba(200, 220, 215, 0.06); --grid-major: rgba(200, 220, 215, 0.13);
     --c-cyan: #22d3ee; --c-orange: #ff8a3d; --c-green: #69db7c; --c-red: #ff6b6b;
     --p-city: #7fb0ff; --p-corp: #e58ad3; --p-bldg: #4fd1bd;
-    --p-metro: #69db7c; --p-bus: #ff922b; --p-rail: #ced4da; --p-sign: #74c0fc;
+    --p-metro: #69db7c; --p-bus: #ff922b; --p-rail: #ced4da; --p-sign: #74c0fc; --p-sign-hw: #69db7c; --p-sign-loc: #ffa94d; --p-peak: #d4a373;
     color-scheme: dark;
   }
 }
@@ -61,7 +61,7 @@
   --grid-minor: rgba(200, 220, 215, 0.06); --grid-major: rgba(200, 220, 215, 0.13);
   --c-cyan: #22d3ee; --c-orange: #ff8a3d; --c-green: #69db7c; --c-red: #ff6b6b;
   --p-city: #7fb0ff; --p-corp: #e58ad3; --p-bldg: #4fd1bd;
-  --p-metro: #69db7c; --p-bus: #ff922b; --p-rail: #ced4da; --p-sign: #74c0fc;
+  --p-metro: #69db7c; --p-bus: #ff922b; --p-rail: #ced4da; --p-sign: #74c0fc; --p-sign-hw: #69db7c; --p-sign-loc: #ffa94d; --p-peak: #d4a373;
   color-scheme: dark;
 }
 
@@ -173,8 +173,11 @@ button { cursor: pointer; }
 .sw.bus { border-radius: 4px; }
 .sw.rail { border-radius: 2px; }
 .sw.sign { border-radius: 40% 40% 50% 50%; }
+.sw.peak { border-radius: 0; clip-path: polygon(50% 0, 100% 100%, 0 100%); }
+.meas { flex: none; padding: 0 6px; font-size: 13px; color: var(--ink-2); white-space: nowrap; }
+.numin { flex: none; width: 84px; min-height: 38px; padding: 0 8px; font-size: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); text-align: center; }
 .wl { display: block; width: 26px; border-radius: 2px; background: var(--ink); }
-.modes { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
+.modes { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
 .mode {
   min-height: 54px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
   border: 0; border-radius: 12px; background: transparent; color: var(--ink-2); font-size: 12px; font-weight: 500;
@@ -197,7 +200,7 @@ button { cursor: pointer; }
 .btn { min-height: 44px; padding: 0 18px; border-radius: 10px; border: 0; font-weight: 600; background: var(--accent); color: var(--accent-ink); }
 .btn.ghost { background: transparent; color: var(--danger); border: 1px solid var(--line); }
 .lab { font: 500 12px var(--font-mono); letter-spacing: 0.06em; color: var(--ink-2); text-transform: uppercase; }
-.sheet input[type="text"], .sheet textarea {
+.sheet input[type="text"], .sheet input[type="number"], .sheet textarea {
   width: 100%; min-height: 44px; padding: 10px 12px; font-size: 16px;
   border: 1px solid var(--line); border-radius: 10px; background: var(--paper); resize: vertical;
 }
@@ -294,6 +297,7 @@ button { cursor: pointer; }
       <button class="mode" data-mode="select" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M6 3l12 7.5-5.2 1.6L10.5 18z"/></svg>선택</button>
       <button class="mode" data-mode="pin" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M12 21s-6-5.2-6-10a6 6 0 1 1 12 0c0 4.8-6 10-6 10z"/><circle cx="12" cy="11" r="2.2"/></svg>핀</button>
       <button class="mode" data-mode="text" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M5 7V4.5h14V7M12 4.5v15M9 19.5h6"/></svg>글자</button>
+      <button class="mode" data-mode="ruler" aria-pressed="false"><svg viewBox="0 0 24 24"><rect x="2.5" y="8" width="19" height="8" rx="1.5"/><path d="M6.5 8v3M10.5 8v4.5M14.5 8v3M18.5 8v4.5"/></svg>재기</button>
       <button class="mode" data-mode="erase" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M16.2 3.8l4 4a2 2 0 0 1 0 2.8L11 19.8H7l-3.2-3.2a2 2 0 0 1 0-2.8l9.6-10a2 2 0 0 1 2.8 0z"/><path d="M9 8.2l6.8 6.8M11 19.8h9"/></svg>지우개</button>
     </nav>
   </footer>
@@ -307,6 +311,10 @@ button { cursor: pointer; }
   <div id="f-kinds" class="opts wrap" role="group" aria-label="종류"></div>
   <div class="lab" id="l-owner" hidden>소속 기업</div>
   <div id="f-owner" class="opts wrap" role="group" aria-label="소속 기업" hidden></div>
+  <div class="lab" id="l-line" hidden>노선 색</div>
+  <div id="f-line" class="opts wrap" role="group" aria-label="세부 종류" hidden></div>
+  <label class="lab" id="l-h" for="f-height" hidden>높이 (m)</label>
+  <input id="f-height" type="number" inputmode="decimal" step="any" placeholder="예: 1947" hidden>
   <label class="lab" id="l-memo" for="f-memo">메모</label>
   <textarea id="f-memo" rows="3" maxlength="500" placeholder="업종, 인구, 설정 같은 내용을 적어 두세요"></textarea>
   <div class="sh-foot"><button id="sh-del" class="btn ghost" type="button">삭제</button></div>
@@ -394,6 +402,9 @@ button { cursor: pointer; }
 
   /* ---------- 종류 정의 ---------- */
   var PEN_COLORS = [['cyan', '하늘색', '--c-cyan'], ['ink', '먹색', '--ink'], ['orange', '주황색', '--c-orange'], ['green', '초록색', '--c-green'], ['red', '빨간색', '--c-red']];
+  var LINE_COLORS = [['L1', '1호선', '#0052A4'], ['L2', '2호선', '#00A84D'], ['L3', '3호선', '#EF7C1C'], ['L4', '4호선', '#00A5DE'], ['L5', '5호선', '#996CAC'], ['L6', '6호선', '#CD7C2F'], ['L7', '7호선', '#747F00'], ['L8', '8호선', '#E6186C'], ['L9', '9호선', '#BDB092'], ['LS', '신분당선', '#D4003B'], ['LA', '공항철도', '#0090D2'], ['LG', '경의중앙선', '#77C4A3'], ['LB', '수인분당선', '#F5A200'], ['LW', '우이신설선', '#B0CE18']];
+  var SIGN_KINDS = [['hw', '고속도로', '--p-sign-hw'], ['nat', '일반국도', '--p-sign'], ['loc', '지방도', '--p-sign-loc']];
+  var HSTEPS = [5, 10, 50, 100];
   var PEN_WIDTHS = [[2, '얇게'], [4, '보통'], [8, '굵게']];
   var PEN_STYLES = [
     ['solid', '일반', '<path d="M2 7h24"/>'],
@@ -403,29 +414,33 @@ button { cursor: pointer; }
     ['tunnel', '터널', '<path d="M5 7h3M12 7h4M20 7h3M3 3v8M25 3v8"/>'],
     ['border', '경계선', '<path d="M2 7h6M11 7h1.5M15 7h6M24 7h2"/>'],
     ['river', '강·바다', '<path d="M2 8q3-5 6 0t6 0t6 0t6 0"/>'],
-    ['oneway', '방향', '<path d="M2 7h24M19 3l5 4-5 4"/>']
+    ['oneway', '방향', '<path d="M2 7h24M19 3l5 4-5 4"/>'],
+    ['contour', '등고선', '<path d="M2 10q5-9 10-4t14-2M3 13q6-5 11-1t11-1"/>']
   ];
   var ERASER_SIZES = [[10, '작게'], [18, '보통'], [32, '크게']];
   var PIN_KINDS = {
     city: { label: '도시', v: '--p-city' }, corp: { label: '기업', v: '--p-corp' }, bldg: { label: '건물', v: '--p-bldg' },
     metro: { label: '지하철역', v: '--p-metro' }, bus: { label: '버스정류장', v: '--p-bus' }, rail: { label: '철도역', v: '--p-rail' },
-    sign: { label: '도로 번호', v: '--p-sign' }
+    sign: { label: '도로 번호', v: '--p-sign' },
+    peak: { label: '산·고도점', v: '--p-peak' }
   };
   var TEXT_SIZES = [[11, '작게'], [16, '보통'], [26, '크게']];
   var LAYERS = [
     ['solid', '일반 선'], ['rail', '철도'], ['metro', '지하철'], ['bridge', '교각'], ['tunnel', '터널'],
-    ['border', '경계선'], ['river', '강·바다'], ['oneway', '방향 표시'],
+    ['border', '경계선'], ['river', '강·바다'], ['oneway', '방향 표시'], ['contour', '등고선·고도점'],
     ['place', '도시·기업·건물'], ['transit', '역·정류장'], ['sign', '도로 번호'], ['text', '글자']
   ];
   function layerOf(f) {
     if (f.t === 'pen') return f.s || 'solid';
     if (f.t === 'text') return 'text';
     if (f.k === 'sign') return 'sign';
+    if (f.k === 'peak') return 'contour';
     return (f.k === 'metro' || f.k === 'bus' || f.k === 'rail') ? 'transit' : 'place';
   }
   function eraOf(f) { return f.era || 'main'; }
   function shown(f) { return eraOf(f) === state.era && !(state.hidden && state.hidden[layerOf(f)]); }
   var TIPS = {
+    ruler: '끌어서 길이를 재요. 도로 폭도 재 볼 수 있어요',
     pen: '그리다 멈추면 직선이 돼요. 맞춤을 켜면 도로끼리 딱 맞아요. 철도·지하철·교각·터널·경계선은 선 종류에서 골라요',
     select: '눌러서 고르고, 끌어서 옮겨요',
     pin: '놓을 자리를 누르세요',
@@ -434,7 +449,7 @@ button { cursor: pointer; }
   };
 
   /* ---------- 상태 ---------- */
-  var state = { mode: 'pen', pen: { c: 'cyan', w: 2, s: 'solid', line: false, snap: true }, eraser: 18, pinKind: 'city', grid: false, textSize: 16, hidden: {}, era: 'main', ghost: null, cell: 100, compass: true, scalebar: true, corp: null, penOnly: null };
+  var state = { mode: 'pen', pen: { c: 'ink', w: 2, s: 'solid', line: false, snap: true, h: 100 }, eraser: 18, pinKind: 'city', grid: false, textSize: 16, hidden: {}, era: 'main', ghost: null, cell: 100, compass: true, scalebar: true, corp: null, penOnly: null, lineColor: '', signKind: 'nat', hStep: 50, ruler: null };
   var eras = [{ id: 'main', name: '현재' }];
   var features = new Map();
   var B = null;
@@ -481,8 +496,9 @@ button { cursor: pointer; }
       paper: g('--paper'), ink: g('--ink'), accent: g('--accent'), danger: g('--danger'),
       gridMinor: g('--grid-minor'), gridMajor: g('--grid-major'),
       pen: { cyan: g('--c-cyan'), ink: g('--ink'), orange: g('--c-orange'), green: g('--c-green'), red: g('--c-red') },
-      pin: { city: g('--p-city'), corp: g('--p-corp'), bldg: g('--p-bldg'), metro: g('--p-metro'), bus: g('--p-bus'), rail: g('--p-rail'), sign: g('--p-sign') }
+      pin: { city: g('--p-city'), corp: g('--p-corp'), bldg: g('--p-bldg'), metro: g('--p-metro'), bus: g('--p-bus'), rail: g('--p-rail'), sign: g('--p-sign'), signhw: g('--p-sign-hw'), signloc: g('--p-sign-loc'), peak: g('--p-peak') }
     };
+    LINE_COLORS.forEach(function (l) { TH.pen[l[0]] = l[2]; });
     return TH;
   }
   function resetTheme() { TH = null; requestDraw(); }
@@ -652,7 +668,7 @@ button { cursor: pointer; }
     }
   }
   function drawPin(c, T, f, sx, sy) {
-    var col = T.pin[f.k] || T.pin.city;
+    var col = (f.k === 'metro' && f.lc && T.pen[f.lc]) || (f.k === 'sign' && (f.sg === 'hw' ? T.pin.signhw : f.sg === 'loc' ? T.pin.signloc : null)) || T.pin[f.k] || T.pin.city;
     c.save(); c.lineWidth = 2.5; c.strokeStyle = T.paper; c.fillStyle = col;
     if (f.k === 'corp') {
       c.beginPath(); c.rect(sx - 7, sy - 7, 14, 14); c.stroke(); c.fill();
@@ -669,9 +685,16 @@ button { cursor: pointer; }
       c.fillStyle = T.paper; c.fillRect(sx - 4, sy - 5, 2, 10); c.fillRect(sx + 2, sy - 5, 2, 10);
       c.fillRect(sx - 5, sy - 3, 10, 1.6); c.fillRect(sx - 5, sy + 1.6, 10, 1.6);
     } else if (f.k === 'sign') {
-      var st = (f.n || '').slice(0, 4), sfs = st.length > 2 ? 10 : 12, sw = Math.max(20, st.length * sfs * 0.7 + 12);
-      c.beginPath(); if (c.roundRect) c.roundRect(sx - sw / 2, sy - 10, sw, 20, 10); else c.rect(sx - sw / 2, sy - 10, sw, 20); c.stroke(); c.fill();
-      c.fillStyle = T.paper; c.font = '700 ' + sfs + 'px ' + FONT; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(st, sx, sy + 0.5);
+      var st = (f.n || '').slice(0, 4), sfs = st.length > 2 ? 10 : 12, sw = Math.max(22, st.length * sfs * 0.7 + 12), sg = f.sg || 'nat', ty = sy + 0.5;
+      c.beginPath();
+      if (sg === 'hw') { if (c.roundRect) c.roundRect(sx - sw / 2, sy - 10, sw, 20, 3); else c.rect(sx - sw / 2, sy - 10, sw, 20); }
+      else if (sg === 'loc') { if (c.roundRect) c.roundRect(sx - sw / 2, sy - 10, sw, 20, 10); else c.rect(sx - sw / 2, sy - 10, sw, 20); }
+      else { c.moveTo(sx - sw / 2, sy - 11); c.lineTo(sx + sw / 2, sy - 11); c.lineTo(sx + sw / 2, sy + 1); c.quadraticCurveTo(sx + sw / 2, sy + 10, sx, sy + 13); c.quadraticCurveTo(sx - sw / 2, sy + 10, sx - sw / 2, sy + 1); c.closePath(); ty = sy - 1.5; }
+      c.stroke(); c.fill();
+      c.fillStyle = T.paper; c.font = '700 ' + sfs + 'px ' + FONT; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(st, sx, ty);
+    } else if (f.k === 'peak') {
+      c.beginPath(); c.moveTo(sx, sy - 10); c.lineTo(sx + 10, sy + 7); c.lineTo(sx - 10, sy + 7); c.closePath(); c.stroke(); c.fill();
+      c.fillStyle = T.paper; c.beginPath(); c.moveTo(sx, sy - 10); c.lineTo(sx + 3.8, sy - 3); c.lineTo(sx - 3.8, sy - 3); c.closePath(); c.fill();
     } else if (f.k === 'bldg') {
       c.beginPath(); c.moveTo(sx, sy - 9); c.lineTo(sx + 9, sy); c.lineTo(sx, sy + 9); c.lineTo(sx - 9, sy); c.closePath(); c.stroke(); c.fill();
     } else {
@@ -679,6 +702,41 @@ button { cursor: pointer; }
       c.fillStyle = T.paper; c.beginPath(); c.arc(sx, sy, 2.6, 0, 6.2832); c.fill();
     }
     c.restore();
+  }
+  function fmtLen(m) {
+    if (m >= 1000) { var k = m / 1000; return (k >= 100 ? Math.round(k) : Math.round(k * 100) / 100) + 'km'; }
+    return (m >= 100 ? Math.round(m) : Math.round(m * 10) / 10) + 'm';
+  }
+  var HYPSO = [[-200, [47, 95, 158]], [0, [110, 163, 90]], [100, [155, 184, 102]], [300, [210, 192, 103]], [600, [200, 149, 90]], [1000, [168, 105, 74]], [1500, [139, 94, 75]], [2500, [217, 212, 207]]];
+  function contourColor(h) {
+    if (h == null || isNaN(h)) return 'rgb(176,137,104)';
+    var n = HYPSO.length, i, lo, hi, t;
+    if (h <= HYPSO[0][0]) return 'rgb(' + HYPSO[0][1].join(',') + ')';
+    if (h >= HYPSO[n - 1][0]) return 'rgb(' + HYPSO[n - 1][1].join(',') + ')';
+    for (i = 0; i < n - 1; i++) if (h < HYPSO[i + 1][0]) break;
+    lo = HYPSO[i]; hi = HYPSO[i + 1]; t = (h - lo[0]) / (hi[0] - lo[0]);
+    return 'rgb(' + lo[1].map(function (v, j) { return Math.round(v + (hi[1][j] - v) * t); }).join(',') + ')';
+  }
+  function midPoint(p, frac) {
+    var tot = 0, i, d;
+    for (i = 0; i + 3 < p.length; i += 2) tot += Math.hypot(p[i + 2] - p[i], p[i + 3] - p[i + 1]);
+    var half = tot * (frac || 0.5);
+    for (i = 0; i + 3 < p.length; i += 2) {
+      d = Math.hypot(p[i + 2] - p[i], p[i + 3] - p[i + 1]);
+      if (half <= d && d > 0) { var t = half / d; return [p[i] + (p[i + 2] - p[i]) * t, p[i + 1] + (p[i + 3] - p[i + 1]) * t]; }
+      half -= d;
+    }
+    return [p[0], p[1]];
+  }
+  function drawRuler(c, T) {
+    var r = state.ruler, z = view.z, ax = r.a[0] * z + view.x, ay = r.a[1] * z + view.y, bx = r.b[0] * z + view.x, by = r.b[1] * z + view.y;
+    var d = Math.hypot(r.b[0] - r.a[0], r.b[1] - r.a[1]) * state.cell / 50; if (d < 0.01) return;
+    var L = Math.hypot(bx - ax, by - ay) || 1, nx = -(by - ay) / L * 7, ny = (bx - ax) / L * 7;
+    c.save(); c.strokeStyle = T.accent; c.lineWidth = 2; c.lineCap = 'round'; c.setLineDash([6, 4]);
+    c.beginPath(); c.moveTo(ax, ay); c.lineTo(bx, by); c.stroke(); c.setLineDash([]);
+    c.beginPath(); c.moveTo(ax - nx, ay - ny); c.lineTo(ax + nx, ay + ny); c.moveTo(bx - nx, by - ny); c.lineTo(bx + nx, by + ny); c.stroke();
+    c.restore();
+    label(c, T, fmtLen(d), (ax + bx) / 2, (ay + by) / 2 - 16, '700 14px ' + FONT, 'center');
   }
   function drawCompass(c, T) {
     var cx = W - 38, cy = 42;
@@ -728,9 +786,19 @@ button { cursor: pointer; }
         c.save(); c.strokeStyle = T.accent; c.globalAlpha = 0.35; c.lineCap = 'round'; c.lineJoin = 'round'; c.setLineDash([]);
         c.lineWidth = f.w + 12 / z; c.stroke(pathOf(f)); c.restore();
       }
-      c.strokeStyle = T.pen[f.c] || T.ink; strokeLine(c, pathOf(f), Math.max(f.w, 1 / z), f.s, f.p, 1);
+      c.strokeStyle = f.s === 'contour' ? contourColor(f.h) : (T.pen[f.c] || T.ink); strokeLine(c, pathOf(f), Math.max(f.w, 1 / z), f.s, f.p, 1);
     }
     c.restore();
+    var placed = [];
+    B2.pens.forEach(function (f) {
+      if (f.s !== 'contour' || f.h == null) return;
+      var hh = 0, k; for (k = 0; k < f.id.length; k++) hh = (hh * 31 + f.id.charCodeAt(k)) >>> 0;
+      var mp = midPoint(f.p, 0.3 + (hh % 40) / 100), mx = mp[0] * z + view.x, my = mp[1] * z + view.y;
+      if (mx < -40 || my < -20 || mx > W + 40 || my > H + 20) return;
+      if (placed.some(function (q) { return Math.abs(q[0] - mx) < 46 && Math.abs(q[1] - my) < 14; })) return;
+      placed.push([mx, my]);
+      label(c, T, (Math.round(f.h * 10) / 10) + 'm', mx, my, '600 11px ' + FONT, 'center');
+    });
 
     if (B2.ghost.length) {
       c.save(); c.globalAlpha = 0.3; c.fillStyle = T.ink;
@@ -760,7 +828,8 @@ button { cursor: pointer; }
         c.beginPath(); c.arc(sx, sy, 19, 0, 6.2832); c.stroke(); c.restore();
       }
       drawPin(c, T, f, sx, sy);
-      if (f.n && f.k !== 'sign') label(c, T, f.n, sx + 13, sy, '500 13px ' + FONT, 'left');
+      var ptxt = f.k === 'peak' ? [f.n, f.h != null && f.h !== '' ? (Math.round(f.h * 10) / 10) + 'm' : ''].filter(Boolean).join(' ') : f.n;
+      if (ptxt && f.k !== 'sign') label(c, T, ptxt, sx + 13, sy, '500 13px ' + FONT, 'left');
       if (dim) c.globalAlpha = 1;
     }
 
@@ -780,13 +849,16 @@ button { cursor: pointer; }
       c.save();
       var pp = new Path2D(), fp = [s.pts[0].x, s.pts[0].y]; pp.moveTo(s.pts[0].x, s.pts[0].y);
       for (i = 1; i < s.pts.length; i++) { pp.lineTo(s.pts[i].x, s.pts[i].y); fp.push(s.pts[i].x, s.pts[i].y); }
-      c.strokeStyle = T.pen[state.pen.c] || T.ink; strokeLine(c, pp, Math.max(state.pen.w * z, 1), state.pen.s, fp, z);
+      c.strokeStyle = state.pen.s === 'contour' ? contourColor(state.pen.h) : (T.pen[state.pen.c] || T.ink); strokeLine(c, pp, Math.max(state.pen.w * z, 1), state.pen.s, fp, z);
       c.restore();
+      var pl = 0, lp = s.pts[s.pts.length - 1]; for (i = 1; i < s.pts.length; i++) pl += Math.hypot(s.pts[i].x - s.pts[i - 1].x, s.pts[i].y - s.pts[i - 1].y);
+      label(c, T, fmtLen(pl / z * state.cell / 50), lp.x + 14, lp.y - 18, '600 12px ' + FONT, 'left');
     }
     if (s && s.m === 'erase' && s.cur) {
       c.save(); c.strokeStyle = T.ink; c.globalAlpha = 0.55; c.lineWidth = 1.5;
       c.beginPath(); c.arc(s.cur.x, s.cur.y, state.eraser, 0, 6.2832); c.stroke(); c.restore();
     }
+    if (state.ruler) drawRuler(c, T);
     if (state.compass) drawCompass(c, T);
     if (state.scalebar) drawScale(c, T);
     var zt = Math.round(z * 100) + '%'; if (zoomEl.textContent !== zt) zoomEl.textContent = zt;
@@ -969,19 +1041,46 @@ button { cursor: pointer; }
       b.appendChild(document.createTextNode(st[1])); row.appendChild(b);
     });
   }
-  function penToneRow(row, curC, curW, onC, onW) {
-    PEN_COLORS.forEach(function (c) {
+  function penToneRow(row, curC, curW, onC, onW, noColor) {
+    (noColor ? [] : PEN_COLORS).forEach(function (c) {
       var b = chip(curC === c[0], 'round', function () { onC(c[0]); });
       b.setAttribute('aria-label', c[1]);
       var s = document.createElement('i'); s.className = 'sw dot'; s.style.setProperty('--c', 'var(' + c[2] + ')');
       b.appendChild(s); row.appendChild(b);
     });
-    var vr = document.createElement('span'); vr.className = 'vr'; row.appendChild(vr);
+    if (!noColor) { var vr = document.createElement('span'); vr.className = 'vr'; row.appendChild(vr); }
     PEN_WIDTHS.forEach(function (w) {
       var b = chip(curW === w[0], 'round', function () { onW(w[0]); });
       b.setAttribute('aria-label', w[1] + ' 선');
       var l = document.createElement('i'); l.className = 'wl'; l.style.height = Math.min(w[0], 8) + 'px'; b.appendChild(l); row.appendChild(b);
     });
+  }
+  function lineRow(row, cur, onPick, withDefault) {
+    var lb = document.createElement('span'); lb.className = 'meas'; lb.textContent = '노선'; row.appendChild(lb);
+    if (withDefault) { var nb = chip(!cur, '', function () { onPick(''); }); nb.textContent = '기본'; row.appendChild(nb); }
+    LINE_COLORS.forEach(function (l) {
+      var b = chip(cur === l[0], 'round', function () { onPick(l[0]); });
+      b.setAttribute('aria-label', l[1]);
+      var d = document.createElement('i'); d.className = 'sw dot'; d.style.setProperty('--c', l[2]); b.appendChild(d); row.appendChild(b);
+    });
+  }
+  function signRow(row, cur, onPick) {
+    SIGN_KINDS.forEach(function (k) {
+      var b = chip(cur === k[0], '', function () { onPick(k[0]); });
+      var d = document.createElement('i'); d.className = 'sw dot'; d.style.width = '12px'; d.style.height = '12px'; d.style.setProperty('--c', 'var(' + k[2] + ')');
+      b.appendChild(d); b.appendChild(document.createTextNode(k[1])); row.appendChild(b);
+    });
+  }
+  function heightRow(row, h, onH) {
+    var step = state.hStep, lb = document.createElement('span'); lb.className = 'meas'; lb.textContent = '높이'; row.appendChild(lb);
+    var inp = document.createElement('input'); inp.type = 'number'; inp.inputMode = 'decimal'; inp.className = 'numin'; inp.value = h == null ? 0 : h;
+    var mn = chip(false, '', function () { onH((Number(inp.value) || 0) - step); }); mn.textContent = '−' + step;
+    var pl = chip(false, '', function () { onH((Number(inp.value) || 0) + step); }); pl.textContent = '+' + step;
+    inp.addEventListener('change', function () { onH(Number(inp.value) || 0); });
+    var un = document.createElement('span'); un.className = 'meas'; un.textContent = 'm';
+    var st = chip(false, '', function () { state.hStep = HSTEPS[(HSTEPS.indexOf(state.hStep) + 1) % HSTEPS.length]; renderOptions(); });
+    st.textContent = '단위 ' + step;
+    [mn, inp, un, pl, st].forEach(function (e) { row.appendChild(e); });
   }
   function delChip(row) {
     var d = chip(false, 'danger', removeSelected); d.textContent = '삭제'; row.appendChild(d);
@@ -1000,15 +1099,20 @@ button { cursor: pointer; }
       mb.appendChild(document.createTextNode('맞춤')); row.appendChild(mb);
       var vr0 = document.createElement('span'); vr0.className = 'vr'; row.appendChild(vr0);
       penStyleRow(row, state.pen.s, function (v) { state.pen.s = v; renderOptions(); });
+      if (state.pen.s === 'contour') { row = newRow(); heightRow(row, state.pen.h, function (v) { state.pen.h = v; renderOptions(); }); }
+      if (state.pen.s === 'metro') { row = newRow(); lineRow(row, state.pen.c, function (v) { state.pen.c = v; renderOptions(); }); }
       row = newRow();
-      penToneRow(row, state.pen.c, state.pen.w, function (v) { state.pen.c = v; renderOptions(); }, function (v) { state.pen.w = v; renderOptions(); });
+      penToneRow(row, state.pen.c, state.pen.w, function (v) { state.pen.c = v; renderOptions(); }, function (v) { state.pen.w = v; renderOptions(); }, state.pen.s === 'contour');
     } else if (m === 'select') {
       var sf = selFeature();
       if (sf && sf.t === 'pen') {
         row = newRow();
         penStyleRow(row, sf.s || 'solid', function (v) { applyPatch({ s: v }); });
+        if (sf.s === 'contour') { row = newRow(); heightRow(row, sf.h, function (v) { applyPatch({ h: v }); }); }
+        if (sf.s === 'metro') { row = newRow(); lineRow(row, sf.c, function (v) { applyPatch({ c: v }); }); }
         row = newRow();
-        penToneRow(row, sf.c, sf.w, function (v) { applyPatch({ c: v }); }, function (v) { applyPatch({ w: v }); });
+        penToneRow(row, sf.c, sf.w, function (v) { applyPatch({ c: v }); }, function (v) { applyPatch({ w: v }); }, sf.s === 'contour');
+        var ln = document.createElement('span'); ln.className = 'meas'; ln.textContent = '길이 ' + fmtLen(polyLen(ptsOf(sf)) * state.cell / 50); row.appendChild(ln);
         delChip(row);
       } else if (sf) {
         row = newRow();
@@ -1018,6 +1122,12 @@ button { cursor: pointer; }
     } else if (m === 'pin') {
       row = newRow();
       buildPinChips(row, state.pinKind, function (k) { state.pinKind = k; renderOptions(); });
+      if (state.pinKind === 'metro') { row = newRow(); lineRow(row, state.lineColor, function (v) { state.lineColor = v; renderOptions(); }, true); }
+      if (state.pinKind === 'sign') { row = newRow(); signRow(row, state.signKind, function (v) { state.signKind = v; renderOptions(); }); }
+    } else if (m === 'ruler') {
+      row = newRow();
+      var rl = document.createElement('span'); rl.className = 'meas'; rl.textContent = '격자 한 칸'; row.appendChild(rl);
+      CELLS.forEach(function (cl) { var cb = chip(state.cell === cl[0], '', function () { state.cell = cl[0]; saveSettings(); renderOptions(); requestDraw(); }); cb.textContent = cl[1]; row.appendChild(cb); });
     } else if (m === 'text') {
       row = newRow();
       buildSizeChips(row, state.textSize, function (v) { state.textSize = v; renderOptions(); });
@@ -1035,7 +1145,7 @@ button { cursor: pointer; }
     tipTimer = setTimeout(function () { tipEl.hidden = true; }, 3200);
   }
   function setMode(m) {
-    closeSheet(); cancelStroke(); state.mode = m; selIds = new Set();
+    closeSheet(); cancelStroke(); state.mode = m; selIds = new Set(); state.ruler = null;
     document.querySelectorAll('.mode').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.mode === m)); });
     renderOptions(); showTip(TIPS[m]); requestDraw();
   }
@@ -1299,7 +1409,7 @@ button { cursor: pointer; }
   });
 
   /* ---------- 핀 이름·메모 편집 시트 ---------- */
-  var sheetEl = $('#sheet'), nameEl = $('#f-name'), memoEl = $('#f-memo'), kindsEl = $('#f-kinds'), lOwnerEl = $('#l-owner'), ownerEl = $('#f-owner');
+  var sheetEl = $('#sheet'), nameEl = $('#f-name'), memoEl = $('#f-memo'), kindsEl = $('#f-kinds'), lOwnerEl = $('#l-owner'), ownerEl = $('#f-owner'), lLineEl = $('#l-line'), lineEl = $('#f-line'), lHEl = $('#l-h'), hEl = $('#f-height');
   function openSheet(id, focusName, isNew) {
     var f = features.get(id); if (!f) return;
     sheet = { id: id, before: f, deleted: false, isNew: !!isNew };
@@ -1318,8 +1428,29 @@ button { cursor: pointer; }
     var f = sheet && features.get(sheet.id); if (!f) return;
     if (f.t === 'text') buildSizeChips(kindsEl, f.sz || 16, function (v) { updateFeature({ sz: v }); renderSheetKinds(); });
     else buildPinChips(kindsEl, f.k, function (k) { updateFeature({ k: k }); renderSheetKinds(); });
-    renderSheetOwner();
+    renderSheetOwner(); renderSheetLine();
   }
+  function renderSheetLine() {
+    var f = sheet && features.get(sheet.id), isPin = !!f && f.t === 'pin';
+    var showLine = isPin && (f.k === 'metro' || f.k === 'sign'), showH = isPin && f.k === 'peak';
+    lLineEl.hidden = !showLine; lineEl.hidden = !showLine; lHEl.hidden = !showH; hEl.hidden = !showH;
+    if (showH && document.activeElement !== hEl) hEl.value = f.h == null ? '' : f.h;
+    if (!showLine) return;
+    lineEl.textContent = '';
+    if (f.k === 'metro') {
+      lLineEl.textContent = '노선 색';
+      var nb = chip(!f.lc, '', function () { updateFeature({ lc: '' }); renderSheetLine(); }); nb.textContent = '기본'; lineEl.appendChild(nb);
+      LINE_COLORS.forEach(function (l) {
+        var b = chip(f.lc === l[0], 'round', function () { updateFeature({ lc: l[0] }); renderSheetLine(); });
+        b.setAttribute('aria-label', l[1]);
+        var d = document.createElement('i'); d.className = 'sw dot'; d.style.setProperty('--c', l[2]); b.appendChild(d); lineEl.appendChild(b);
+      });
+    } else {
+      lLineEl.textContent = '도로 종류';
+      signRow(lineEl, f.sg || 'nat', function (v) { updateFeature({ sg: v }); renderSheetLine(); });
+    }
+  }
+  hEl.addEventListener('input', function () { updateFeature({ h: hEl.value === '' ? null : Number(hEl.value) }); });
   function renderSheetOwner() {
     var f = sheet && features.get(sheet.id), show = !!f && f.t === 'pin';
     lOwnerEl.hidden = !show; ownerEl.hidden = !show; if (!show) return;
@@ -1361,7 +1492,7 @@ button { cursor: pointer; }
       commit([{ id: s.id, before: s.before, after: null }]);
     } else {
       flushWrite(s.id);
-      if (!s.deleted && cur && (cur.n !== s.before.n || cur.m !== s.before.m || cur.k !== s.before.k || cur.sz !== s.before.sz || cur.o !== s.before.o || cur.gc !== s.before.gc)) pushOnly([{ id: s.id, before: s.before, after: cur }]);
+      if (!s.deleted && cur && (cur.n !== s.before.n || cur.m !== s.before.m || cur.k !== s.before.k || cur.sz !== s.before.sz || cur.o !== s.before.o || cur.gc !== s.before.gc || cur.lc !== s.before.lc || cur.sg !== s.before.sg || cur.h !== s.before.h)) pushOnly([{ id: s.id, before: s.before, after: cur }]);
     }
     sheetEl.hidden = true; if (state.mode !== 'select') selIds = new Set();
     if (document.activeElement && sheetEl.contains(document.activeElement)) document.activeElement.blur();
@@ -1523,6 +1654,7 @@ button { cursor: pointer; }
     var panOnly = e.pointerType === 'touch' && state.penOnly && (state.mode === 'pen' || state.mode === 'erase');
     stroke = { m: panOnly ? 'pan' : state.mode, pts: [p], start: p, last: p, cur: p, t: performance.now(), moved: 0, panning: false };
     if (!panOnly && state.mode === 'erase') { stroke.ers = { removed: new Map(), added: new Map() }; eraseTo(stroke, p); }
+    if (state.mode === 'ruler') { var rw = toWorld(p); state.ruler = { a: rw, b: rw }; requestDraw(); }
     if (state.mode === 'select') {
       var hit = hitAny(toWorld(p));
       if (hit) { selIds = new Set([hit.id]); stroke.drag = { id: hit.id, orig: hit }; renderOptions(); requestDraw(); }
@@ -1548,6 +1680,8 @@ button { cursor: pointer; }
     } else if (s.m === 'pen') {
       if (state.pen.line || s.straight) { s.pts = [s.start, snapEnd(s.start, p)]; s.last = p; requestDraw(); }
       else if (Math.hypot(dx, dy) >= 1.5) { s.pts.push(p); s.last = p; requestDraw(); armHold(s); }
+    } else if (s.m === 'ruler') {
+      if (state.ruler) { state.ruler.b = toWorld(snapEnd(s.start, p)); requestDraw(); }
     } else if (s.m === 'erase') {
       eraseTo(s, p); requestDraw();
     }
@@ -1634,6 +1768,7 @@ button { cursor: pointer; }
   function finishStroke(s, p) {
     var z = view.z, tapped = !s.panning && s.moved < 8 && (performance.now() - s.t) < 700;
     if (s.m === 'pan') { requestDraw(); return; }
+    if (s.m === 'ruler') { if (s.moved < 6) state.ruler = null; requestDraw(); return; }
     if (s.m === 'select') {
       if (s.drag) {
         if (s.dragging) {
@@ -1650,6 +1785,8 @@ button { cursor: pointer; }
       var w = toWorld(p), h2 = hitPin(w, 14);
       if (h2) { openSheet(h2.id, false); return; }
       var f = { id: newId(), t: 'pin', k: state.pinKind, p: [r1(w[0]), r1(w[1])], n: '', m: '', era: state.era, ts: Date.now() };
+      if (f.k === 'metro' && state.lineColor) f.lc = state.lineColor;
+      if (f.k === 'sign') f.sg = state.signKind;
       reveal(f); commit([{ id: f.id, before: null, after: f }]); openSheet(f.id, true); return;
     }
     if (s.m === 'text') {
@@ -1670,8 +1807,9 @@ button { cursor: pointer; }
     if (s.m === 'pen') {
       var pts = rdp(s.pts.map(toWorld), 0.7 / z);
       if (pts.length < 2 || polyLen(pts) < 3 / z) { requestDraw(); return; }
-      if (state.pen.snap) pts = snapStroke(pts, z);
+      if (state.pen.snap && state.pen.s !== 'contour' && state.pen.s !== 'river') pts = snapStroke(pts, z);
       var r = { id: newId(), t: 'pen', c: state.pen.c, w: state.pen.w, s: state.pen.s, p: flat(pts), era: state.era, ts: Date.now() };
+      if (r.s === 'contour') r.h = state.pen.h;
       reveal(r); commit([{ id: r.id, before: null, after: r }]);
     }
   }
