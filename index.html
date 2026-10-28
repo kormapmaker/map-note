@@ -437,7 +437,7 @@ button { cursor: pointer; }
     sign: { label: '도로 번호', v: '--p-sign' },
     peak: { label: '산·고도점', v: '--p-peak' }
   };
-  var TEXT_SIZES = [[11, '작게'], [16, '보통'], [26, '크게']];
+  var TEXT_SIZES = [[11, '작게'], [16, '보통'], [26, '크게'], [70, '동네 이름'], [260, '도시 이름']];
   var LAYERS = [
     ['road', '도로(폭)'], ['solid', '일반 선'], ['major', '큰 도로'], ['rail', '철도'], ['metro', '지하철'], ['bridge', '교각'], ['tunnel', '터널'],
     ['border', '경계선'], ['river', '강·바다'], ['oneway', '방향 표시'], ['contour', '등고선·고도점'], ['relief', '입체 지형'],
@@ -464,7 +464,7 @@ button { cursor: pointer; }
   };
 
   /* ---------- 상태 ---------- */
-  var state = { mode: 'pen', pen: { c: 'ink', w: 2, s: 'solid', line: false, snap: true, h: 100, rect: false, rm: 800, rvm: 50, rdm: 14, rc: 'ink', rvm2: 50, wb: 100, wcut: false }, eraser: 18, pinKind: 'city', grid: false, textSize: 16, hidden: {}, era: 'main', ghost: null, cell: 100, compass: true, scalebar: true, corp: null, penOnly: null, lineColor: '', signKind: 'nat', hStep: 50, ruler: null };
+  var state = { mode: 'pen', pen: { c: 'ink', w: 2, s: 'solid', line: false, snap: true, h: 100, rect: false, rm: 800, rvm: 50, rdm: 14, rc: 'ink', rvm2: 50, wb: 100, wcut: false }, eraser: 18, pinKind: 'city', grid: false, textSize: 16, hidden: {}, era: 'main', ghost: null, cell: 100, compass: true, scalebar: true, corp: null, penOnly: null, lineColor: '', signKind: 'nat', hStep: 50, ruler: null, ulEdit: null };
   var eras = [{ id: 'main', name: '현재' }];
   var features = new Map();
   var B = null;
@@ -724,22 +724,28 @@ button { cursor: pointer; }
     c.fillStyle = T.ink; c.fillText(txt, x, y);
   }
   function drawGrid(c, T) {
-    var z = view.z, S = 50, step = S * z, i, wx, wy, s;
+    var z = view.z, S0 = 50, mult = 1, i, wx, wy, s;
+    while (S0 * mult * z < 9) mult *= 5;
+    var S = S0 * mult, step = S * z, MJ = 5;
     var x0 = Math.floor((-view.x / z) / S) * S, x1 = (W - view.x) / z;
     var y0 = Math.floor((-view.y / z) / S) * S, y1 = (H - view.y) / z;
     c.lineWidth = 1;
     for (wx = x0; wx <= x1; wx += S) {
-      i = Math.round(wx / S); var major = i % 5 === 0;
-      if (!major && step < 9) continue;
+      i = Math.round(wx / S); var major = i % MJ === 0;
       c.strokeStyle = major ? T.gridMajor : T.gridMinor; s = Math.round(wx * z + view.x) + 0.5;
       c.beginPath(); c.moveTo(s, 0); c.lineTo(s, H); c.stroke();
     }
     for (wy = y0; wy <= y1; wy += S) {
-      i = Math.round(wy / S); var maj = i % 5 === 0;
-      if (!maj && step < 9) continue;
+      i = Math.round(wy / S); var maj = i % MJ === 0;
       c.strokeStyle = maj ? T.gridMajor : T.gridMinor; s = Math.round(wy * z + view.y) + 0.5;
       c.beginPath(); c.moveTo(0, s); c.lineTo(W, s); c.stroke();
     }
+  }
+  /* 멀리서 볼 때 보여 줄 핀: 아주 멀면 도시만 */
+  function pinLod(f, z) {
+    if (z >= 0.12 || f.k === 'city') return true;
+    if (z >= 0.03) return f.k === 'corp' || f.k === 'rail' || f.k === 'peak' || f.k === 'sign';
+    return z >= 0.008 && f.k === 'peak';
   }
   function drawPin(c, T, f, sx, sy) {
     var col = (f.k === 'metro' && f.lc && T.pen[f.lc]) || (f.k === 'sign' && (f.sg === 'hw' ? T.pin.signhw : f.sg === 'loc' ? T.pin.signloc : null)) || T.pin[f.k] || T.pin.city;
@@ -895,6 +901,106 @@ button { cursor: pointer; }
     c.drawImage(R.cv, 0, 0, R.cw, R.ch, ((-RSTEP / 2 - R.vx) / R.vz) * view.z + view.x, ((-RSTEP / 2 - R.vy) / R.vz) * view.z + view.y, R.cw * RSTEP * k, R.ch * RSTEP * k);
     c.restore();
   }
+  /* ---------- 밑그림: 사진을 지도 뒤에 깔아 두고 따라 그린다 (이 기기에만 저장) ---------- */
+  var ULS = [], ulDB = null;
+  function ulOpen() {
+    return new Promise(function (res) {
+      if (ulDB) { res(ulDB); return; }
+      try {
+        var rq = indexedDB.open('mapnote-ul', 1);
+        rq.onupgradeneeded = function () { rq.result.createObjectStore('u', { keyPath: 'id' }); };
+        rq.onsuccess = function () { ulDB = rq.result; res(ulDB); };
+        rq.onerror = function () { res(null); };
+      } catch (e) { res(null); }
+    });
+  }
+  function ulRec(u) { return { id: u.id, blob: u.blob, w: u.w, h: u.h, x: u.x, y: u.y, s: u.s, r: u.r, o: u.o, hid: !!u.hid, n: u.n || '' }; }
+  function ulPut(u) { ulOpen().then(function (db) { if (!db) return; try { db.transaction('u', 'readwrite').objectStore('u').put(ulRec(u)); } catch (e) {} }); }
+  function ulDelete(id) {
+    ULS = ULS.filter(function (u) { return u.id !== id; });
+    if (state.ulEdit === id) state.ulEdit = null;
+    ulOpen().then(function (db) { if (!db) return; try { db.transaction('u', 'readwrite').objectStore('u').delete(id); } catch (e) {} });
+    renderOptions(); requestDraw();
+  }
+  function ulImg(u) { var im = new Image(); im.onload = function () { u.img = im; requestDraw(); }; im.src = URL.createObjectURL(u.blob); }
+  function ulLoad() {
+    ulOpen().then(function (db) {
+      if (!db) return;
+      try {
+        var rq = db.transaction('u').objectStore('u').getAll();
+        rq.onsuccess = function () { (rq.result || []).forEach(function (r) { var u = Object.assign({}, r); ULS.push(u); ulImg(u); }); };
+      } catch (e) {}
+    });
+  }
+  function ulGet(id) { return ULS.find(function (u) { return u.id === id; }) || null; }
+  function ulAdd(file) {
+    var url = URL.createObjectURL(file), im = new Image();
+    im.onload = function () {
+      var M = 2400, k = Math.min(1, M / Math.max(im.naturalWidth, im.naturalHeight)), w = Math.round(im.naturalWidth * k), h = Math.round(im.naturalHeight * k);
+      var cv = document.createElement('canvas'); cv.width = w; cv.height = h; cv.getContext('2d').drawImage(im, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      cv.toBlob(function (blob) {
+        if (!blob) { showTip('사진을 열지 못했어요'); return; }
+        var z = view.z, u = { id: newId(), blob: blob, w: w, h: h, x: (W / 2 - view.x) / z, y: (H / 2 - view.y) / z, s: (0.85 * W / z) / w, r: 0, o: 0.5, hid: false, n: '밑그림 ' + (ULS.length + 1) };
+        ULS.push(u); ulImg(u); ulPut(u);
+        setLayersOpen(false); startUlEdit(u.id);
+      }, 'image/jpeg', 0.85);
+    };
+    im.onerror = function () { URL.revokeObjectURL(url); showTip('사진을 열지 못했어요'); };
+    im.src = url;
+  }
+  function pickUlPhoto() {
+    var inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*';
+    inp.addEventListener('change', function () { if (inp.files && inp.files[0]) ulAdd(inp.files[0]); });
+    inp.click();
+  }
+  function startUlEdit(id) {
+    cancelStroke(); state.ulEdit = id; selIds = new Set();
+    var u = ulGet(id); if (u && u.hid) { u.hid = false; ulPut(u); }
+    renderOptions(); showTip('사진을 끌어서 옮기고, 모서리 점을 끌어 크기와 각도를 맞추세요'); requestDraw();
+  }
+  function endUlEdit() { state.ulEdit = null; renderOptions(); requestDraw(); }
+  function ulCorners(u) {
+    var z = view.z, cx = u.x * z + view.x, cy = u.y * z + view.y, hw = u.w * u.s * z / 2, hh = u.h * u.s * z / 2, cs = Math.cos(u.r), sn = Math.sin(u.r);
+    return [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]].map(function (q) { return [cx + q[0] * cs - q[1] * sn, cy + q[0] * sn + q[1] * cs]; });
+  }
+  function ulInside(u, p) {
+    var z = view.z, dx = p.x - (u.x * z + view.x), dy = p.y - (u.y * z + view.y), cs = Math.cos(-u.r), sn = Math.sin(-u.r);
+    var lx = (dx * cs - dy * sn) / (u.s * z), ly = (dx * sn + dy * cs) / (u.s * z);
+    return Math.abs(lx) <= u.w / 2 && Math.abs(ly) <= u.h / 2;
+  }
+  function drawUnderlays(c) {
+    var z = view.z;
+    ULS.forEach(function (u) {
+      if (u.hid || !u.img) return;
+      c.save(); c.globalAlpha = u.o; c.translate(u.x * z + view.x, u.y * z + view.y); c.rotate(u.r); c.scale(u.s * z, u.s * z);
+      c.imageSmoothingEnabled = true; c.drawImage(u.img, -u.w / 2, -u.h / 2); c.restore();
+    });
+  }
+  function drawUlEdit(c, T) {
+    var u = ulGet(state.ulEdit); if (!u) return;
+    var cs = ulCorners(u);
+    c.save(); c.strokeStyle = T.accent; c.lineWidth = 2; c.setLineDash([7, 5]);
+    c.beginPath(); cs.forEach(function (q, i) { if (i) c.lineTo(q[0], q[1]); else c.moveTo(q[0], q[1]); }); c.closePath(); c.stroke();
+    c.setLineDash([]); c.fillStyle = T.paper; c.lineWidth = 3;
+    cs.forEach(function (q) { c.beginPath(); c.arc(q[0], q[1], 11, 0, 6.2832); c.fill(); c.stroke(); });
+    c.restore();
+  }
+  function ulPointerDown(p) {
+    var u = ulGet(state.ulEdit); if (!u) { state.ulEdit = null; return null; }
+    var cs = ulCorners(u), z = view.z, cx = u.x * z + view.x, cy = u.y * z + view.y;
+    for (var i = 0; i < 4; i++) if (Math.hypot(p.x - cs[i][0], p.y - cs[i][1]) <= 26) {
+      return { m: 'ul', kind: 'corner', u: u, cx: cx, cy: cy, a0: Math.atan2(p.y - cy, p.x - cx), d0: Math.hypot(p.x - cx, p.y - cy) || 1, s0: u.s, r0: u.r, pts: [p], start: p, last: p, cur: p, t: performance.now(), moved: 0 };
+    }
+    if (ulInside(u, p)) return { m: 'ul', kind: 'move', u: u, x0: u.x, y0: u.y, pts: [p], start: p, last: p, cur: p, t: performance.now(), moved: 0 };
+    return null;
+  }
+  function ulPointerMove(s, p) {
+    var u = s.u, z = view.z;
+    if (s.kind === 'move') { u.x = s.x0 + (p.x - s.start.x) / z; u.y = s.y0 + (p.y - s.start.y) / z; }
+    else { u.s = s.s0 * Math.max(0.02, Math.hypot(p.x - s.cx, p.y - s.cy) / s.d0); u.r = s.r0 + Math.atan2(p.y - s.cy, p.x - s.cx) - s.a0; }
+    requestDraw();
+  }
   function drawCompass(c, T) {
     var cx = W - 38, cy = 42;
     c.save();
@@ -927,6 +1033,7 @@ button { cursor: pointer; }
     c.fillStyle = T.paper; c.fillRect(0, 0, W, H);
     colWater = T.water || colWater; colMajor = T.major || colMajor; colInk = T.ink || colInk;
     drawRelief(c, T);
+    drawUnderlays(c, T);
     if (state.grid) drawGrid(c, T);
 
     c.save(); c.translate(view.x, view.y); c.scale(z, z);
@@ -992,8 +1099,13 @@ button { cursor: pointer; }
         c.save(); c.strokeStyle = T.accent; c.globalAlpha = 0.35; c.lineWidth = rf.w + 12 / z; c.stroke(pathOf(rf)); c.restore();
       });
       c.strokeStyle = T.ink;
-      rds.forEach(function (rf) { c.lineWidth = Math.max(rf.w, 0) + 2 * edge; c.stroke(pathOf(rf)); });
-      rds.forEach(function (rf) { c.strokeStyle = rf.c === 'orange' ? T.major : T.roadFill; c.lineWidth = Math.max(rf.w, 0.01); c.stroke(pathOf(rf)); });
+      /* 멀리서 보면 작은 길은 가는 선으로만 */
+      var thin = rds.filter(function (rf) { return rf.c !== 'orange' && rf.w * z < 1.2; });
+      var full = rds.filter(function (rf) { return !(rf.c !== 'orange' && rf.w * z < 1.2); });
+      if (thin.length) { c.save(); c.globalAlpha = 0.45; c.lineWidth = 1 / z; thin.forEach(function (rf) { c.stroke(pathOf(rf)); }); c.restore(); }
+      var rwOf = function (rf) { return rf.c === 'orange' ? Math.max(rf.w, 2.4 / z) : Math.max(rf.w, 0.01); };
+      full.forEach(function (rf) { c.lineWidth = rwOf(rf) + 2 * edge; c.stroke(pathOf(rf)); });
+      full.forEach(function (rf) { c.strokeStyle = rf.c === 'orange' ? T.major : T.roadFill; c.lineWidth = rwOf(rf); c.stroke(pathOf(rf)); });
       c.restore();
     }
     for (i = 0; i < B2.pens.length; i++) {
@@ -1032,9 +1144,11 @@ button { cursor: pointer; }
       });
       c.restore();
     }
-    for (i = 0; i < B2.pins.length; i++) {
-      f = B2.pins[i]; var sx = f.p[0] * z + view.x, sy = f.p[1] * z + view.y;
+    var plabels = [], pinOrder = B2.pins.slice().sort(function (a, b) { return (b.k === 'city') - (a.k === 'city'); });
+    for (i = 0; i < pinOrder.length; i++) {
+      f = pinOrder[i]; var sx = f.p[0] * z + view.x, sy = f.p[1] * z + view.y;
       if (sx < -80 || sy < -30 || sx > W + 80 || sy > H + 30) continue;
+      if (!pinLod(f, z) && !selIds.has(f.id)) continue;
       var dim = gk && f.id !== gk && f.o !== gk;
       if (dim) c.globalAlpha = 0.25;
       var gkey = groupKey(f);
@@ -1048,7 +1162,16 @@ button { cursor: pointer; }
       }
       drawPin(c, T, f, sx, sy);
       var ptxt = f.k === 'peak' ? [f.n, f.h != null && f.h !== '' ? (Math.round(f.h * 10) / 10) + 'm' : ''].filter(Boolean).join(' ') : f.n;
-      if (ptxt && f.k !== 'sign') label(c, T, ptxt, sx + 13, sy, '500 13px ' + FONT, 'left');
+      if (ptxt && f.k !== 'sign') {
+        var pfont = (f.k === 'city' && z < 0.12 ? '700 15px ' : '500 13px ') + FONT;
+        c.font = pfont; var lw = c.measureText(ptxt).width;
+        /* 이름표: 오른쪽 → 왼쪽 → 위 → 아래 순서로 빈 자리를 찾고, 없으면 생략 (선택한 것은 항상) */
+        var spots = [[sx + 13, sy, 'left', [sx + 11, sy - 9, sx + 15 + lw, sy + 9]], [sx - 13, sy, 'right', [sx - 15 - lw, sy - 9, sx - 11, sy + 9]],
+                     [sx, sy - 20, 'center', [sx - lw / 2 - 2, sy - 29, sx + lw / 2 + 2, sy - 11]], [sx, sy + 20, 'center', [sx - lw / 2 - 2, sy + 11, sx + lw / 2 + 2, sy + 29]]];
+        var free = function (lr) { return !plabels.some(function (q) { return q[0] < lr[2] && lr[0] < q[2] && q[1] < lr[3] && lr[1] < q[3]; }); };
+        var spot = selIds.has(f.id) ? spots[0] : spots.find(function (o) { return free(o[3]); });
+        if (spot) { plabels.push(spot[3]); label(c, T, ptxt, spot[0], spot[1], pfont, spot[2]); }
+      }
       if (dim) c.globalAlpha = 1;
     }
 
@@ -1087,10 +1210,11 @@ button { cursor: pointer; }
       c.save(); c.strokeStyle = T.ink; c.globalAlpha = 0.55; c.lineWidth = 1.5;
       c.beginPath(); c.arc(s.cur.x, s.cur.y, state.eraser, 0, 6.2832); c.stroke(); c.restore();
     }
+    if (state.ulEdit) drawUlEdit(c, T);
     if (state.ruler) drawRuler(c, T);
     if (state.compass) drawCompass(c, T);
     if (state.scalebar) drawScale(c, T);
-    var zt = Math.round(z * 100) + '%'; if (zoomEl.textContent !== zt) zoomEl.textContent = zt;
+    var zt = (z >= 0.1 ? Math.round(z * 100) : Number((z * 100).toPrecision(2))) + '%'; if (zoomEl.textContent !== zt) zoomEl.textContent = zt;
   }
 
   function resize() {
@@ -1109,7 +1233,7 @@ button { cursor: pointer; }
   function restoreView() {
     try {
       var v = JSON.parse(localStorage.getItem('mapnote:view'));
-      if (v && isFinite(v.x) && isFinite(v.y) && isFinite(v.z) && features.size) { view = { x: v.x, y: v.y, z: clamp(v.z, 0.1, 8) }; return true; }
+      if (v && isFinite(v.x) && isFinite(v.y) && isFinite(v.z) && features.size) { view = { x: v.x, y: v.y, z: clamp(v.z, 0.002, 8) }; return true; }
     } catch (e) {}
     return false;
   }
@@ -1119,7 +1243,7 @@ button { cursor: pointer; }
     var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     L.forEach(function (f) { for (var i = 0; i < f.p.length; i += 2) { x0 = Math.min(x0, f.p[i]); x1 = Math.max(x1, f.p[i]); y0 = Math.min(y0, f.p[i + 1]); y1 = Math.max(y1, f.p[i + 1]); } });
     var bw = Math.max(x1 - x0, 60), bh = Math.max(y1 - y0, 60);
-    var z = clamp(Math.min((W - 80) / bw, (H - 80) / bh), 0.2, 2);
+    var z = clamp(Math.min((W - 80) / bw, (H - 80) / bh), 0.002, 2);
     view = { z: z, x: W / 2 - ((x0 + x1) / 2) * z, y: H / 2 - ((y0 + y1) / 2) * z };
     saveViewSoon(); requestDraw();
   }
@@ -1338,6 +1462,7 @@ button { cursor: pointer; }
   function riverRows(newRow, m0, m1, onBoth, on0, on1) {
     var row = newRow();
     metersRow(row, '강폭', RIVER_W, Math.abs(m0 - m1) < 0.5 ? m0 : -1, onBoth);
+    meterInput(row, Math.abs(m0 - m1) < 0.5 ? m0 : (m0 + m1) / 2, onBoth);
     row = newRow();
     var l0 = document.createElement('span'); l0.className = 'meas'; l0.textContent = '상류'; row.appendChild(l0); meterInput(row, m0, on0);
     var l1 = document.createElement('span'); l1.className = 'meas'; l1.textContent = '→ 하구'; row.appendChild(l1); meterInput(row, m1, on1);
@@ -1374,6 +1499,20 @@ button { cursor: pointer; }
     var m = state.mode; optsEl.textContent = '';
     function newRow() { var r = document.createElement('div'); r.className = 'row'; optsEl.appendChild(r); return r; }
     var row;
+    var ue = state.ulEdit ? ulGet(state.ulEdit) : null;
+    if (ue) {
+      row = newRow();
+      var ul0 = document.createElement('span'); ul0.className = 'meas'; ul0.textContent = '밑그림 진하기'; row.appendChild(ul0);
+      [[0.25, '연하게'], [0.5, '보통'], [0.8, '진하게']].forEach(function (o) {
+        var b = chip(Math.abs(ue.o - o[0]) < 0.05, '', function () { ue.o = o[0]; ulPut(ue); renderOptions(); requestDraw(); }); b.textContent = o[1]; row.appendChild(b);
+      });
+      row = newRow();
+      var r0 = chip(false, '', function () { ue.r = 0; ulPut(ue); requestDraw(); }); r0.textContent = '각도 바로';
+      var dl = chip(false, 'danger', function () { ulDelete(ue.id); }); dl.textContent = '사진 삭제';
+      var dn = chip(true, '', endUlEdit); dn.textContent = '다 맞췄어요';
+      row.appendChild(r0); row.appendChild(dl); row.appendChild(dn);
+      return;
+    }
     if (m === 'pen') {
       row = newRow();
       var sb = chip(state.pen.line, 'ps', function () { state.pen.line = !state.pen.line; if (state.pen.line) state.pen.rect = false; renderOptions(); });
@@ -1459,6 +1598,7 @@ button { cursor: pointer; }
     tipTimer = setTimeout(function () { tipEl.hidden = true; }, 3200);
   }
   function setMode(m) {
+    state.ulEdit = null;
     closeSheet(); cancelStroke(); state.mode = m; selIds = new Set(); state.ruler = null;
     document.querySelectorAll('.mode').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.mode === m)); });
     renderOptions(); showTip(TIPS[m]); requestDraw();
@@ -1533,6 +1673,20 @@ button { cursor: pointer; }
       b.textContent = cl[1]; cw.appendChild(b);
     });
     layersEl.appendChild(cw);
+    layersEl.appendChild(mkHead('밑그림 (사진 따라 그리기)'));
+    var up = document.createElement('p'); up.className = 'hint'; up.textContent = '노트 사진을 지도 뒤에 깔아요. 사진은 이 기기에만 저장돼요.'; layersEl.appendChild(up);
+    ULS.forEach(function (u) {
+      layersEl.appendChild(mkRow(u.n || '밑그림', !u.hid, function () { u.hid = !u.hid; ulPut(u); buildLayers(); requestDraw(); }));
+      var uw = document.createElement('div'); uw.className = 'chips';
+      var ub = chip(false, '', function () { setLayersOpen(false); startUlEdit(u.id); }); ub.textContent = '위치·진하기 맞추기';
+      var gb = chip(false, '', function () {
+        setLayersOpen(false); var z = Math.min(view.z, (W * 0.9) / (u.w * u.s));
+        view.z = clamp(z, 0.002, 8); view.x = W / 2 - u.x * view.z; view.y = H / 2 - u.y * view.z; saveViewSoon(); requestDraw();
+      }); gb.textContent = '사진으로 가기';
+      uw.appendChild(ub); uw.appendChild(gb); layersEl.appendChild(uw);
+    });
+    var ua = document.createElement('button'); ua.type = 'button'; ua.className = 'btn soft'; ua.textContent = '사진 불러오기';
+    ua.addEventListener('click', pickUlPhoto); layersEl.appendChild(ua);
     var cs = corps();
     if (cs.length) {
       layersEl.appendChild(mkHead('기업별 보기'));
@@ -1866,6 +2020,7 @@ button { cursor: pointer; }
   function hitPin0(w, tol) {
     var z = view.z, P = buckets().pins;
     for (var i = P.length - 1; i >= 0; i--) {
+      if (!pinLod(P[i], z)) continue;
       if (Math.hypot((P[i].p[0] - w[0]) * z, (P[i].p[1] - w[1]) * z) <= Math.max(tol, 14)) return P[i];
     }
     return null;
@@ -1964,12 +2119,12 @@ button { cursor: pointer; }
     if (!gesture || ptrs.size < 2) return;
     var v = Array.from(ptrs.values()), a = v[0], b = v[1], g = gesture;
     var d = Math.hypot(a.x - b.x, a.y - b.y) || 1, m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-    var nz = clamp(g.v0.z * d / g.d0, 0.1, 8);
+    var nz = clamp(g.v0.z * d / g.d0, 0.002, 8);
     var wx = (g.m0.x - g.v0.x) / g.v0.z, wy = (g.m0.y - g.v0.y) / g.v0.z;
     view.z = nz; view.x = m.x - wx * nz; view.y = m.y - wy * nz; saveViewSoon(); requestDraw();
   }
   function zoomAt(p, k) {
-    var nz = clamp(view.z * k, 0.1, 8), wx = (p.x - view.x) / view.z, wy = (p.y - view.y) / view.z;
+    var nz = clamp(view.z * k, 0.002, 8), wx = (p.x - view.x) / view.z, wy = (p.y - view.y) / view.z;
     view.z = nz; view.x = p.x - wx * nz; view.y = p.y - wy * nz; saveViewSoon(); requestDraw();
   }
 
@@ -1984,6 +2139,11 @@ button { cursor: pointer; }
     var p = pos(e); ptrs.set(e.pointerId, p);
     if (ptrs.size >= 2) { startGesture(); cancelStroke(); return; }
     if (locked) return;
+    if (state.ulEdit) {
+      var us = ulPointerDown(p);
+      stroke = us || { m: 'pan', pts: [p], start: p, last: p, cur: p, t: performance.now(), moved: 0, panning: false };
+      return;
+    }
     var panOnly = e.pointerType === 'touch' && state.penOnly && (state.mode === 'pen' || state.mode === 'erase');
     stroke = { m: panOnly ? 'pan' : state.mode, rect: !panOnly && state.mode === 'pen' && !!state.pen.rect, pts: [p], start: p, last: p, cur: p, t: performance.now(), moved: 0, panning: false };
     if (!panOnly && state.mode === 'erase') { stroke.ers = { removed: new Map(), added: new Map() }; eraseTo(stroke, p); }
@@ -2000,6 +2160,7 @@ button { cursor: pointer; }
     var s = stroke; if (!s) return;
     var dx = p.x - s.last.x, dy = p.y - s.last.y;
     s.moved = Math.max(s.moved, Math.hypot(p.x - s.start.x, p.y - s.start.y));
+    if (s.m === 'ul') { ulPointerMove(s, p); return; }
     if (s.m === 'pan') { if (s.moved > 4 || s.panning) { s.panning = true; view.x += dx; view.y += dy; s.last = p; saveViewSoon(); requestDraw(); } return; }
     if (s.m === 'select' && s.drag) {
       if (s.moved > 6 || s.dragging) {
@@ -2109,6 +2270,7 @@ button { cursor: pointer; }
   function finishStroke(s, p) {
     var z = view.z, tapped = !s.panning && s.moved < 8 && (performance.now() - s.t) < 700;
     if (s.m === 'pan') { requestDraw(); return; }
+    if (s.m === 'ul') { ulPut(s.u); requestDraw(); return; }
     if (s.m === 'ruler') { if (s.moved < 6) state.ruler = null; requestDraw(); return; }
     if (s.m === 'select') {
       if (s.drag) {
@@ -2210,7 +2372,7 @@ button { cursor: pointer; }
   /* ---------- 시작 ---------- */
   new ResizeObserver(resize).observe(stage);
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { requestDraw(); });
-  updateEraBtn(); buildLayers(); renderOptions(); refreshUI(); resize();
+  updateEraBtn(); buildLayers(); renderOptions(); refreshUI(); resize(); ulLoad();
   init();
 })();
 </script>
