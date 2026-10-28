@@ -424,11 +424,12 @@ button { cursor: pointer; }
     ['tunnel', '터널', '<path d="M5 7h3M12 7h4M20 7h3M3 3v8M25 3v8"/>'],
     ['border', '경계선', '<path d="M2 7h6M11 7h1.5M15 7h6M24 7h2"/>'],
     ['river', '강·바다', '<path d="M2 8q3-5 6 0t6 0t6 0t6 0"/>'],
+    ['water', '물 칠하기', '<path d="M3 7h22" style="stroke:var(--c-water);stroke-width:8;opacity:.75"/>'],
     ['oneway', '방향', '<path d="M2 7h24M19 3l5 4-5 4"/>'],
     ['contour', '등고선', '<path d="M2 10q5-9 10-4t14-2M3 13q6-5 11-1t11-1"/>'],
     ['terrain', '입체 지형', '<path d="M2 12l7-9 5 6 3-4 9 7z"/>']
   ];
-  var TERRAIN_R = [300, 800, 2000, 5000], RIVER_W = [20, 50, 120, 300], ROAD_W = [6, 10, 14, 20, 30];
+  var TERRAIN_R = [300, 800, 2000, 5000], RIVER_W = [20, 50, 120, 300], ROAD_W = [6, 10, 14, 20, 30], WATER_B = [30, 100, 300, 1000];
   var ERASER_SIZES = [[10, '작게'], [18, '보통'], [32, '크게']];
   var PIN_KINDS = {
     city: { label: '도시', v: '--p-city' }, corp: { label: '기업', v: '--p-corp' }, bldg: { label: '건물', v: '--p-bldg' },
@@ -444,6 +445,7 @@ button { cursor: pointer; }
   ];
   function layerOf(f) {
     if (f.t === 'pen' && f.s === 'terrain') return 'relief';
+    if (f.t === 'pen' && f.s === 'water') return 'river';
     if (f.t === 'pen') return f.s || 'solid';
     if (f.t === 'text') return 'text';
     if (f.k === 'sign') return 'sign';
@@ -462,7 +464,7 @@ button { cursor: pointer; }
   };
 
   /* ---------- 상태 ---------- */
-  var state = { mode: 'pen', pen: { c: 'ink', w: 2, s: 'solid', line: false, snap: true, h: 100, rect: false, rm: 800, rvm: 50, rdm: 14, rc: 'ink' }, eraser: 18, pinKind: 'city', grid: false, textSize: 16, hidden: {}, era: 'main', ghost: null, cell: 100, compass: true, scalebar: true, corp: null, penOnly: null, lineColor: '', signKind: 'nat', hStep: 50, ruler: null };
+  var state = { mode: 'pen', pen: { c: 'ink', w: 2, s: 'solid', line: false, snap: true, h: 100, rect: false, rm: 800, rvm: 50, rdm: 14, rc: 'ink', rvm2: 50, wb: 100, wcut: false }, eraser: 18, pinKind: 'city', grid: false, textSize: 16, hidden: {}, era: 'main', ghost: null, cell: 100, compass: true, scalebar: true, corp: null, penOnly: null, lineColor: '', signKind: 'nat', hStep: 50, ruler: null };
   var eras = [{ id: 'main', name: '현재' }];
   var features = new Map();
   var B = null;
@@ -502,6 +504,13 @@ button { cursor: pointer; }
 
   /* ---------- 테마 색 ---------- */
   var TH = null;
+  var _mc = document.createElement('canvas').getContext('2d');
+  function rgbOf(c0) {
+    _mc.fillStyle = '#000'; _mc.fillStyle = c0; var v = _mc.fillStyle, m = /^#([0-9a-f]{6})$/i.exec(v);
+    if (m) return [parseInt(m[1].slice(0, 2), 16), parseInt(m[1].slice(2, 4), 16), parseInt(m[1].slice(4, 6), 16)];
+    m = /rgba?\(([^)]+)\)/.exec(v); return m ? m[1].split(',').slice(0, 3).map(parseFloat) : [0, 0, 0];
+  }
+  function mixCol(a, b, t) { var A = rgbOf(a), Bc = rgbOf(b); return 'rgb(' + A.map(function (v, i) { return Math.round(v + (Bc[i] - v) * t); }).join(',') + ')'; }
   function theme() {
     if (TH) return TH;
     var cs = getComputedStyle(document.documentElement);
@@ -513,6 +522,7 @@ button { cursor: pointer; }
       pin: { city: g('--p-city'), corp: g('--p-corp'), bldg: g('--p-bldg'), metro: g('--p-metro'), bus: g('--p-bus'), rail: g('--p-rail'), sign: g('--p-sign'), signhw: g('--p-sign-hw'), signloc: g('--p-sign-loc'), peak: g('--p-peak') }
     };
     LINE_COLORS.forEach(function (l) { TH.pen[l[0]] = l[2]; });
+    TH.waterFill = mixCol(TH.paper, TH.water, 0.62); TH.waterEdge = mixCol(TH.water, TH.ink, 0.3);
     return TH;
   }
   function resetTheme() { TH = null; requestDraw(); }
@@ -557,6 +567,46 @@ button { cursor: pointer; }
     }
     return b;
   }
+  function wOf(f) { return Math.max(f.w || 0, f.w2 || 0); }
+  var taperCache = new WeakMap();
+  /* 시작 폭 w0에서 끝 폭 w1로 점점 변하는 띠: [몸통, 시작 둥근 끝, 끝 둥근 끝] */
+  function taperPath(p, w0, w1) {
+    var pts = [], n = p.length / 2, i, it;
+    for (i = 0; i < n; i++) pts.push([p[2 * i], p[2 * i + 1]]);
+    for (it = 0; it < 2 && pts.length > 2; it++) {
+      var q = [pts[0]];
+      for (i = 0; i < pts.length - 1; i++) {
+        var a = pts[i], b = pts[i + 1];
+        q.push([a[0] * 0.75 + b[0] * 0.25, a[1] * 0.75 + b[1] * 0.25], [a[0] * 0.25 + b[0] * 0.75, a[1] * 0.25 + b[1] * 0.75]);
+      }
+      q.push(pts[pts.length - 1]); pts = q;
+    }
+    var m = pts.length, cum = [0], L = 0, left = [], right = [];
+    for (i = 1; i < m; i++) { L += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); cum.push(L); }
+    if (!L) L = 1;
+    for (i = 0; i < m; i++) {
+      var a2 = pts[Math.max(i - 1, 0)], b2 = pts[Math.min(i + 1, m - 1)], tx = b2[0] - a2[0], ty = b2[1] - a2[1], tl = Math.hypot(tx, ty) || 1;
+      tx /= tl; ty /= tl;
+      var h = (w0 + (w1 - w0) * cum[i] / L) / 2, nx = -ty * h, ny = tx * h;
+      left.push([pts[i][0] + nx, pts[i][1] + ny]); right.push([pts[i][0] - nx, pts[i][1] - ny]);
+    }
+    var poly = new Path2D(); poly.moveTo(left[0][0], left[0][1]);
+    for (i = 1; i < m; i++) poly.lineTo(left[i][0], left[i][1]);
+    for (i = m - 1; i >= 0; i--) poly.lineTo(right[i][0], right[i][1]);
+    poly.closePath();
+    var c0 = new Path2D(), c1 = new Path2D();
+    c0.arc(pts[0][0], pts[0][1], Math.max(w0, 0.01) / 2, 0, 6.2832);
+    c1.arc(pts[m - 1][0], pts[m - 1][1], Math.max(w1, 0.01) / 2, 0, 6.2832);
+    return [poly, c0, c1];
+  }
+  function taperOf(f) {
+    var t = taperCache.get(f);
+    if (!t) { t = taperPath(f.p, f.w, f.w2 == null ? f.w : f.w2); taperCache.set(f, t); }
+    return t;
+  }
+  function isTaper(f) { return f.s === 'river' && f.w2 != null && Math.abs(f.w - f.w2) > 0.01 && !isClosed(f); }
+  function isClosed(f) { var p = f.p; return f.s === 'river' && p.length >= 8 && Math.hypot(p[0] - p[p.length - 2], p[1] - p[p.length - 1]) < 0.02; }
+  function revFlat(p) { var o = [], i; for (i = p.length - 2; i >= 0; i -= 2) o.push(p[i], p[i + 1]); return o; }
   function pathOf(f) {
     var path = pathCache.get(f);
     if (!path) {
@@ -666,7 +716,7 @@ button { cursor: pointer; }
     }
     c.setLineDash([]); c.lineCap = 'round';
   }
-  var colWater = '#4dabf7', colMajor = '#ee8a2c', colInk = '#222';
+  var waterCv = null, colWater = '#4dabf7', colMajor = '#ee8a2c', colInk = '#222';
   var FONT = '"IBM Plex Sans KR", system-ui, sans-serif';
   function label(c, T, txt, x, y, font, align) {
     c.font = font; c.textAlign = align; c.textBaseline = 'middle';
@@ -884,10 +934,50 @@ button { cursor: pointer; }
     var vx0 = -view.x / z, vy0 = -view.y / z, vx1 = (W - view.x) / z, vy1 = (H - view.y) / z;
     if (B2.ghost.length) {
       c.save(); c.globalAlpha = 0.22; c.strokeStyle = T.ink; c.setLineDash([]);
-      B2.ghost.forEach(function (g) { if (g.t === 'pen') { c.lineWidth = Math.max(g.w, 1 / z); c.stroke(pathOf(g)); } });
+      B2.ghost.forEach(function (g) { if (g.t === 'pen' && !g.cut) { c.lineWidth = Math.max(g.w, 1 / z); c.stroke(pathOf(g)); } });
       c.restore();
     }
-    var rds = [], edge = 1.3 / z;
+    var wts = [], edge = 1.3 / z;
+    for (i = 0; i < B2.pens.length; i++) {
+      f = B2.pens[i];
+      if (f.s !== 'river' && f.s !== 'water') continue;
+      var wb2 = bboxOf(f), wpad = wOf(f) + 4;
+      if (wb2.x1 + wpad < vx0 || wb2.x0 - wpad > vx1 || wb2.y1 + wpad < vy0 || wb2.y0 - wpad > vy1) continue;
+      wts.push(f);
+    }
+    if (wts.length) {
+      /* 물은 따로 그린 뒤 한 번에 얹는다: 겹쳐도 진해지지 않고, 깎기(cut)는 물만 지운다 */
+      var cw = Math.round(W * dpr), ch = Math.round(H * dpr);
+      if (!waterCv) { waterCv = [document.createElement('canvas'), document.createElement('canvas')]; }
+      waterCv.forEach(function (cv) { if (cv.width !== cw || cv.height !== ch) { cv.width = cw; cv.height = ch; } });
+      [0, 1].forEach(function (pass) {
+        var g = waterCv[pass].getContext('2d'), col = pass ? T.waterFill : T.waterEdge, ex = pass ? 0 : 2 * edge;
+        g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, cw, ch);
+        g.setTransform(dpr * z, 0, 0, dpr * z, dpr * view.x, dpr * view.y);
+        g.lineCap = 'round'; g.lineJoin = 'round'; g.strokeStyle = g.fillStyle = col;
+        wts.forEach(function (wf) {
+          if (wf.cut) {
+            g.globalCompositeOperation = 'destination-out';
+            g.lineWidth = Math.max(wf.w + (pass ? 2 * edge : 0), 0.01); g.stroke(pathOf(wf));
+            g.globalCompositeOperation = 'source-over'; return;
+          }
+          if (isTaper(wf)) { taperOf(wf).forEach(function (tp) { if (ex) { g.lineWidth = ex; g.stroke(tp); } g.fill(tp); }); return; }
+          var wp = pathOf(wf);
+          if (isClosed(wf)) { g.fill(wp); }
+          g.lineWidth = Math.max(wf.w, 0.01) + ex; g.stroke(wp);
+        });
+      });
+      waterCv[0].getContext('2d').setTransform(1, 0, 0, 1, 0, 0);
+      waterCv[0].getContext('2d').drawImage(waterCv[1], 0, 0);
+      c.save(); c.setTransform(1, 0, 0, 1, 0, 0); c.drawImage(waterCv[0], 0, 0); c.restore();
+      c.save(); c.lineCap = 'round'; c.lineJoin = 'round'; c.setLineDash([]);
+      wts.forEach(function (wf) {
+        if (wf.cut || !selIds.has(wf.id)) return;
+        c.save(); c.strokeStyle = T.accent; c.globalAlpha = 0.35; c.lineWidth = wOf(wf) + 12 / z; c.stroke(pathOf(wf)); c.restore();
+      });
+      c.restore();
+    }
+    var rds = [];
     for (i = 0; i < B2.pens.length; i++) {
       f = B2.pens[i];
       if (f.s !== 'road') continue;
@@ -908,7 +998,7 @@ button { cursor: pointer; }
     }
     for (i = 0; i < B2.pens.length; i++) {
       f = B2.pens[i];
-      if (f.s === 'road') continue;
+      if (f.s === 'road' || f.s === 'river' || f.s === 'water') continue;
       var bb = bboxOf(f), pad = f.w + 2;
       if (bb.x1 + pad < vx0 || bb.x0 - pad > vx1 || bb.y1 + pad < vy0 || bb.y0 - pad > vy1) continue;
       if (selIds.has(f.id)) {
@@ -978,8 +1068,16 @@ button { cursor: pointer; }
       c.save();
       var pp = new Path2D(), fp = [s.pts[0].x, s.pts[0].y]; pp.moveTo(s.pts[0].x, s.pts[0].y);
       for (i = 1; i < s.pts.length; i++) { pp.lineTo(s.pts[i].x, s.pts[i].y); fp.push(s.pts[i].x, s.pts[i].y); }
-      var pps = state.pen.s, ppw = pps === 'river' ? state.pen.rvm / (state.cell / 50) : (pps === 'road' ? state.pen.rdm / (state.cell / 50) : (pps === 'terrain' ? 2 : state.pen.w));
-      c.strokeStyle = (pps === 'contour' || pps === 'terrain') ? contourColor(state.pen.h) : pps === 'major' ? T.major : pps === 'road' ? (state.pen.rc === 'orange' ? T.major : T.roadFill) : (T.pen[state.pen.c] || T.ink); strokeLine(c, pp, Math.max(ppw * z, 1), pps, fp, z);
+      var pps = state.pen.s, pmpp = state.cell / 50, ppw = pps === 'river' ? state.pen.rvm / pmpp : (pps === 'water' ? state.pen.wb / pmpp : (pps === 'road' ? state.pen.rdm / pmpp : (pps === 'terrain' ? 2 : state.pen.w)));
+      if (pps === 'water' && state.pen.wcut) {
+        c.strokeStyle = T.paper; c.globalAlpha = 0.85; c.lineCap = 'round'; c.lineJoin = 'round'; c.lineWidth = Math.max(ppw * z, 1); c.stroke(pp);
+      } else if (pps === 'river' || pps === 'water') {
+        c.strokeStyle = c.fillStyle = T.waterFill; c.lineCap = 'round'; c.lineJoin = 'round';
+        if (pps === 'river' && Math.abs(state.pen.rvm - state.pen.rvm2) > 0.01 && fp.length >= 4) taperPath(fp, state.pen.rvm / pmpp * z, state.pen.rvm2 / pmpp * z).forEach(function (tp) { c.fill(tp); });
+        else { c.lineWidth = Math.max(ppw * z, 1); c.stroke(pp); }
+      } else {
+        c.strokeStyle = (pps === 'contour' || pps === 'terrain') ? contourColor(state.pen.h) : pps === 'major' ? T.major : pps === 'road' ? (state.pen.rc === 'orange' ? T.major : T.roadFill) : (T.pen[state.pen.c] || T.ink); strokeLine(c, pp, Math.max(ppw * z, 1), pps, fp, z);
+      }
       c.restore();
       var pl = 0, lp = s.pts[s.pts.length - 1]; for (i = 1; i < s.pts.length; i++) pl += Math.hypot(s.pts[i].x - s.pts[i - 1].x, s.pts[i].y - s.pts[i - 1].y);
       if (s.rect) { var rw0 = Math.abs(s.pts[2].x - s.pts[0].x) / z * state.cell / 50, rh0 = Math.abs(s.pts[2].y - s.pts[0].y) / z * state.cell / 50; label(c, T, fmtLen(rw0) + ' × ' + fmtLen(rh0), s.last.x + 14, s.last.y - 18, '600 12px ' + FONT, 'left'); }
@@ -1222,12 +1320,39 @@ button { cursor: pointer; }
   function stylePatch(f, v) {
     var mpp = state.cell / 50, o = { s: v };
     if (v === 'terrain') { o.h = f.h == null ? 100 : f.h; o.r = f.r > 0 ? f.r : Math.max(5, r1(state.pen.rm / mpp)); o.w = 2; }
-    if (v === 'river') o.w = Math.max(2, r1(state.pen.rvm / mpp));
+    if (v === 'river') { o.w = Math.max(2, r1(state.pen.rvm / mpp)); o.w2 = Math.max(2, r1(state.pen.rvm2 / mpp)); }
+    if (v === 'water') { o.w = Math.max(2, r1(state.pen.wb / mpp)); o.w2 = undefined; }
     if (v === 'contour' && f.h == null) o.h = 100;
     if (v === 'major') o.c = 'orange';
     if (v === 'road') { o.w = Math.max(2, r1(state.pen.rdm / mpp)); o.c = state.pen.rc === 'orange' ? 'orange' : 'ink'; }
     else if (f.s === 'road') { o.w = 2; if (v !== 'major') o.c = 'ink'; }
+    if ((f.s === 'river' || f.s === 'water') && v !== 'river' && v !== 'water') { o.w = 2; o.w2 = undefined; }
     return o;
+  }
+  function meterInput(row, curM, onW) {
+    var inp = document.createElement('input'); inp.type = 'number'; inp.inputMode = 'decimal'; inp.className = 'numin'; inp.value = Math.round(curM * 10) / 10;
+    inp.addEventListener('change', function () { var v = Number(inp.value); if (v > 0) onW(Math.min(v, 5000)); });
+    var un = document.createElement('span'); un.className = 'meas'; un.textContent = 'm';
+    row.appendChild(inp); row.appendChild(un);
+  }
+  function riverRows(newRow, m0, m1, onBoth, on0, on1) {
+    var row = newRow();
+    metersRow(row, '강폭', RIVER_W, Math.abs(m0 - m1) < 0.5 ? m0 : -1, onBoth);
+    row = newRow();
+    var l0 = document.createElement('span'); l0.className = 'meas'; l0.textContent = '상류'; row.appendChild(l0); meterInput(row, m0, on0);
+    var l1 = document.createElement('span'); l1.className = 'meas'; l1.textContent = '→ 하구'; row.appendChild(l1); meterInput(row, m1, on1);
+    return row;
+  }
+  function brushRows(newRow, curM, onW, cutOn, onCut) {
+    var row = newRow();
+    if (onCut) {
+      var b1 = chip(!cutOn, '', function () { onCut(false); }); b1.textContent = '칠하기';
+      var b2 = chip(cutOn, '', function () { onCut(true); }); b2.textContent = '깎기';
+      row.appendChild(b1); row.appendChild(b2);
+      var vr = document.createElement('span'); vr.className = 'vr'; row.appendChild(vr);
+    }
+    metersRow(row, '붓', WATER_B, curM, onW); meterInput(row, curM, onW);
+    return row;
   }
   function roadRows(newRow, curM, curC, onW, onC) {
     var row = newRow();
@@ -1265,13 +1390,15 @@ button { cursor: pointer; }
         state.pen.s = v;
         if (v === 'terrain') showTip('산맥을 따라 선을 그으면 그 주변이 높이만큼 솟아올라요');
         if (v === 'road') showTip('도로 가운데 선만 그으세요. 폭은 숫자로 정하고, 교차로는 자동으로 이어져요');
-        if (v === 'river') showTip('강 가운데를 따라 그리세요. 닫힌 모양으로 그리면 호수·바다처럼 채워져요');
+        if (v === 'river') showTip('상류에서 하구 쪽으로 그리세요. 상류·하구 폭을 다르게 하면 점점 넓어져요. 닫힌 모양은 호수처럼 채워져요');
+        if (v === 'water') showTip('붓으로 칠하듯 문지르세요. 호수·바다·넓은 강에 좋고, 지우개로 다듬을 수 있어요');
         renderOptions();
       });
       var ps = state.pen.s;
       if (ps === 'contour' || ps === 'terrain') { row = newRow(); heightRow(row, state.pen.h, function (v) { state.pen.h = v; renderOptions(); }); }
       if (ps === 'terrain') { row = newRow(); metersRow(row, '반경', TERRAIN_R, state.pen.rm, function (v) { state.pen.rm = v; renderOptions(); }); }
-      else if (ps === 'river') { row = newRow(); metersRow(row, '강폭', RIVER_W, state.pen.rvm, function (v) { state.pen.rvm = v; renderOptions(); }); }
+      else if (ps === 'river') { riverRows(newRow, state.pen.rvm, state.pen.rvm2, function (v) { state.pen.rvm = v; state.pen.rvm2 = v; renderOptions(); }, function (v) { state.pen.rvm = v; renderOptions(); }, function (v) { state.pen.rvm2 = v; renderOptions(); }); }
+      else if (ps === 'water') { brushRows(newRow, state.pen.wb, function (v) { state.pen.wb = v; renderOptions(); }, state.pen.wcut, function (v) { state.pen.wcut = v; if (v) showTip('문지른 곳의 물만 깎여요. 물가 모양을 다듬을 때 쓰세요'); renderOptions(); }); }
       else if (ps === 'road') { roadRows(newRow, state.pen.rdm, state.pen.rc, function (v) { state.pen.rdm = v; renderOptions(); }, function (v) { state.pen.rc = v; renderOptions(); }); }
       else {
         if (ps === 'metro') { row = newRow(); lineRow(row, state.pen.c, function (v) { state.pen.c = v; renderOptions(); }); }
@@ -1286,15 +1413,20 @@ button { cursor: pointer; }
         var smpp = state.cell / 50;
         if (sf.s === 'contour' || sf.s === 'terrain') { row = newRow(); heightRow(row, sf.h, function (v) { applyPatch({ h: v }); }); }
         if (sf.s === 'terrain') { row = newRow(); metersRow(row, '반경', TERRAIN_R, (sf.r || 0) * smpp, function (v) { applyPatch({ r: Math.max(5, r1(v / smpp)) }); }); }
-        else if (sf.s === 'river') { row = newRow(); metersRow(row, '강폭', RIVER_W, (sf.w || 0) * smpp, function (v) { applyPatch({ w: Math.max(2, r1(v / smpp)) }); }); }
+        else if (sf.s === 'river') {
+          var rw0 = (sf.w || 0) * smpp, rw1 = (sf.w2 == null ? sf.w : sf.w2) * smpp;
+          riverRows(newRow, rw0, rw1, function (v) { var q = Math.max(2, r1(v / smpp)); applyPatch({ w: q, w2: q }); }, function (v) { applyPatch({ w: Math.max(2, r1(v / smpp)), w2: sf.w2 == null ? sf.w : sf.w2 }); }, function (v) { applyPatch({ w2: Math.max(2, r1(v / smpp)) }); });
+        }
+        else if (sf.s === 'water') { brushRows(newRow, (sf.w || 0) * smpp, function (v) { applyPatch({ w: Math.max(2, r1(v / smpp)) }); }); }
         else if (sf.s === 'road') { row = roadRows(newRow, (sf.w || 0) * smpp, sf.c, function (v) { applyPatch({ w: Math.max(2, r1(v / smpp)) }); }, function (v) { applyPatch({ c: v }); }); }
         else {
           if (sf.s === 'metro') { row = newRow(); lineRow(row, sf.c, function (v) { applyPatch({ c: v }); }); }
           row = newRow();
           penToneRow(row, sf.c, sf.w, function (v) { applyPatch({ c: v }); }, function (v) { applyPatch({ w: v }); }, sf.s === 'contour' || sf.s === 'major');
         }
-        if (sf.s === 'terrain' || sf.s === 'river' || sf.s === 'road') row = newRow();
-        var ln = document.createElement('span'); ln.className = 'meas'; ln.textContent = '길이 ' + fmtLen(polyLen(ptsOf(sf)) * state.cell / 50); row.appendChild(ln);
+        if (sf.s === 'terrain' || sf.s === 'river' || sf.s === 'road' || sf.s === 'water') row = newRow();
+        if (sf.s === 'river') { var rvb = chip(false, '', function () { applyPatch({ p: revFlat(sf.p) }); }); rvb.textContent = '상류↔하구 뒤집기'; row.appendChild(rvb); }
+        if (sf.s !== 'water') { var ln = document.createElement('span'); ln.className = 'meas'; ln.textContent = '길이 ' + fmtLen(polyLen(ptsOf(sf)) * state.cell / 50); row.appendChild(ln); }
         delChip(row);
       } else if (sf) {
         row = newRow();
@@ -1722,7 +1854,8 @@ button { cursor: pointer; }
     var h = hitPin(w, 14); if (h) return h;
     var z = view.z, P = buckets().pens, best = null, bd = Infinity;
     for (var i = P.length - 1; i >= 0; i--) {
-      var f = P[i], bb = bboxOf(f), tol = Math.max(14 / z, f.w / 2 + 6 / z);
+      var f = P[i]; if (f.cut) continue;
+      var bb = bboxOf(f), tol = Math.max(14 / z, wOf(f) / 2 + 6 / z);
       if (w[0] < bb.x0 - tol || w[0] > bb.x1 + tol || w[1] < bb.y0 - tol || w[1] > bb.y1 + tol) continue;
       var d = Infinity, p = f.p;
       for (var j = 0; j + 3 < p.length; j += 2) d = Math.min(d, segDist(w[0], w[1], p[j], p[j + 1], p[j + 2], p[j + 3]));
@@ -1740,14 +1873,25 @@ button { cursor: pointer; }
 
   /* 지우개: 문지른 자리만 잘라 내고, 손을 뗄 때 한 번에 기록한다 */
   function eraseCircle(s, wx, wy) {
-    var z = view.z, r = state.eraser / z, changed = false;
+    var z = view.z, r = state.eraser / z, changed = false, wet = false;
     Array.from(features.values()).forEach(function (f) {
       if (!shown(f)) return;
       var id = f.id, pieces;
+      if (f.t === 'pen' && f.cut) return;
+      if (f.t === 'pen' && f.s === 'water') {
+        if (!wet) {
+          var wbb = bboxOf(f), wr = r + wOf(f) / 2, wp = f.p, d2 = Infinity;
+          if (wx < wbb.x0 - wr || wx > wbb.x1 + wr || wy < wbb.y0 - wr || wy > wbb.y1 + wr) return;
+          for (var j2 = 0; j2 + 3 < wp.length; j2 += 2) d2 = Math.min(d2, segDist(wx, wy, wp[j2], wp[j2 + 1], wp[j2 + 2], wp[j2 + 3]));
+          if (d2 <= wr) wet = true;
+        }
+        return;
+      }
       if (f.t === 'pen') {
         var bb = bboxOf(f);
-        if (wx < bb.x0 - r - f.w || wx > bb.x1 + r + f.w || wy < bb.y0 - r - f.w || wy > bb.y1 + r + f.w) return;
-        pieces = eraseFromLine(ptsOf(f), wx, wy, r); if (!pieces) return;
+        var ew = (f.s === 'water' || f.s === 'river' || f.s === 'road') ? wOf(f) / 2 : 0;
+        if (wx < bb.x0 - r - ew - f.w || wx > bb.x1 + r + ew + f.w || wy < bb.y0 - r - ew - f.w || wy > bb.y1 + r + ew + f.w) return;
+        pieces = eraseFromLine(ptsOf(f), wx, wy, r + ew); if (!pieces) return;
       } else if (f.t === 'pin') {
         if (Math.hypot((f.p[0] - wx) * z, (f.p[1] - wy) * z) > state.eraser + 8) return;
         pieces = [];
@@ -1765,6 +1909,13 @@ button { cursor: pointer; }
       });
       changed = true;
     });
+    if (wet || s.ers.cutId) {
+      var E = s.ers; E.cp = E.cp || []; E.cp.push([r1(wx), r1(wy)]);
+      var cpts = E.cp.length > 1 ? E.cp : [E.cp[0], [E.cp[0][0] + 0.01, E.cp[0][1]]];
+      if (!E.cutId) E.cutId = newId();
+      var cf = { id: E.cutId, t: 'pen', s: 'water', cut: 1, c: 'ink', w: r1(2 * r), p: flat(cpts), era: state.era, ts: E.cutTs || (E.cutTs = Date.now()) };
+      features.set(cf.id, cf); E.added.set(cf.id, cf); changed = true;
+    }
     if (changed) { invalidate(); requestDraw(); }
   }
   function eraseTo(s, p) {
@@ -1987,7 +2138,27 @@ button { cursor: pointer; }
       reveal(tf); features.set(tf.id, tf); invalidate(); openSheet(tf.id, true, true); return;
     }
     if (s.m === 'erase') {
-      var ops = [];
+      var ops = [], E2 = s.ers;
+      if (E2.cutId && features.get(E2.cutId)) {
+        var cf0 = features.get(E2.cutId), cpp = rdp(ptsOf(cf0), 0.7 / z);
+        if (cpp.length < 2) cpp = [cpp[0], [cpp[0][0] + 0.01, cpp[0][1]]];
+        var cf1 = Object.assign({}, cf0, { p: flat(cpp) }); features.set(cf1.id, cf1); E2.added.set(cf1.id, cf1);
+        /* 지우개가 다 덮은 물 조각은 아예 지운다 */
+        var rr = cf1.w / 2;
+        Array.from(features.values()).forEach(function (wf) {
+          if (wf.t !== 'pen' || wf.s !== 'water' || wf.cut || !shown(wf) || wf.w / 2 >= rr) return;
+          var lim = rr - wf.w / 2, P2 = wf.p, ok = true;
+          for (var a = 0; a < P2.length && ok; a += 2) {
+            var dm = Infinity;
+            for (var b2 = 0; b2 + 3 < cf1.p.length; b2 += 2) dm = Math.min(dm, segDist(P2[a], P2[a + 1], cf1.p[b2], cf1.p[b2 + 1], cf1.p[b2 + 2], cf1.p[b2 + 3]));
+            if (dm > lim) ok = false;
+          }
+          if (!ok) return;
+          features.delete(wf.id);
+          if (E2.added.has(wf.id)) E2.added.delete(wf.id); else E2.removed.set(wf.id, wf);
+        });
+        invalidate();
+      }
       s.ers.removed.forEach(function (f0, id) { ops.push({ id: id, before: f0, after: null }); });
       s.ers.added.forEach(function (f1, id) { ops.push({ id: id, before: null, after: f1 }); });
       s.ers = null;
@@ -2003,9 +2174,12 @@ button { cursor: pointer; }
         pts = [ra, [rb2[0], ra[1]], rb2, [ra[0], rb2[1]], [ra[0], ra[1]]];
       } else {
         pts = rdp(s.pts.map(toWorld), 0.7 / z);
-        if (pts.length < 2 || polyLen(pts) < 3 / z) { requestDraw(); return; }
-        if (state.pen.snap && ps2 !== 'contour' && ps2 !== 'river' && ps2 !== 'terrain') pts = snapStroke(pts, z);
-        if (pts.length >= 4 && (state.pen.snap || ps2 === 'river' || ps2 === 'contour' || ps2 === 'terrain')) {
+        if (pts.length < 2 || polyLen(pts) < 3 / z) {
+          if (ps2 === 'water' && s.pts.length) { var q0 = toWorld(s.pts[0]); pts = [q0, [q0[0] + 0.01, q0[1]]]; }
+          else { requestDraw(); return; }
+        }
+        if (state.pen.snap && ps2 !== 'contour' && ps2 !== 'river' && ps2 !== 'terrain' && ps2 !== 'water') pts = snapStroke(pts, z);
+        if (ps2 !== 'water' && pts.length >= 4 && (state.pen.snap || ps2 === 'river' || ps2 === 'contour' || ps2 === 'terrain')) {
           var f0 = pts[0], l0 = pts[pts.length - 1];
           if (Math.hypot(f0[0] - l0[0], f0[1] - l0[1]) < 16 / z && polyLen(pts) > 60 / z) pts[pts.length - 1] = [f0[0], f0[1]];
         }
@@ -2013,7 +2187,8 @@ button { cursor: pointer; }
       var r = { id: newId(), t: 'pen', c: ps2 === 'major' ? 'orange' : (ps2 === 'road' ? state.pen.rc : state.pen.c), w: state.pen.w, s: ps2, p: flat(pts), era: state.era, ts: Date.now() };
       if (ps2 === 'contour') r.h = state.pen.h;
       if (ps2 === 'terrain') { r.h = state.pen.h; r.r = Math.max(5, r1(state.pen.rm / mpp2)); r.w = 2; }
-      if (ps2 === 'river') r.w = Math.max(2, r1(state.pen.rvm / mpp2));
+      if (ps2 === 'river') { r.w = Math.max(2, r1(state.pen.rvm / mpp2)); r.w2 = Math.max(2, r1(state.pen.rvm2 / mpp2)); }
+      if (ps2 === 'water') { r.w = Math.max(2, r1(state.pen.wb / mpp2)); if (state.pen.wcut) r.cut = 1; }
       if (ps2 === 'road') r.w = Math.max(2, r1(state.pen.rdm / mpp2));
       if (s.rect) r.sq = 1;
       reveal(r); commit([{ id: r.id, before: null, after: r }]);
