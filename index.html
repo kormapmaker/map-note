@@ -1233,7 +1233,7 @@ button { cursor: pointer; }
   function restoreView() {
     try {
       var v = JSON.parse(localStorage.getItem('mapnote:view'));
-      if (v && isFinite(v.x) && isFinite(v.y) && isFinite(v.z) && features.size) { view = { x: v.x, y: v.y, z: clamp(v.z, 0.002, 8) }; return true; }
+      if (v && isFinite(v.x) && isFinite(v.y) && isFinite(v.z) && features.size) { view = { x: v.x, y: v.y, z: clamp(v.z, 0.0004, 8) }; return true; }
     } catch (e) {}
     return false;
   }
@@ -1243,7 +1243,7 @@ button { cursor: pointer; }
     var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     L.forEach(function (f) { for (var i = 0; i < f.p.length; i += 2) { x0 = Math.min(x0, f.p[i]); x1 = Math.max(x1, f.p[i]); y0 = Math.min(y0, f.p[i + 1]); y1 = Math.max(y1, f.p[i + 1]); } });
     var bw = Math.max(x1 - x0, 60), bh = Math.max(y1 - y0, 60);
-    var z = clamp(Math.min((W - 80) / bw, (H - 80) / bh), 0.002, 2);
+    var z = clamp(Math.min((W - 80) / bw, (H - 80) / bh), 0.0004, 2);
     view = { z: z, x: W / 2 - ((x0 + x1) / 2) * z, y: H / 2 - ((y0 + y1) / 2) * z };
     saveViewSoon(); requestDraw();
   }
@@ -1681,7 +1681,7 @@ button { cursor: pointer; }
       var ub = chip(false, '', function () { setLayersOpen(false); startUlEdit(u.id); }); ub.textContent = '위치·진하기 맞추기';
       var gb = chip(false, '', function () {
         setLayersOpen(false); var z = Math.min(view.z, (W * 0.9) / (u.w * u.s));
-        view.z = clamp(z, 0.002, 8); view.x = W / 2 - u.x * view.z; view.y = H / 2 - u.y * view.z; saveViewSoon(); requestDraw();
+        view.z = clamp(z, 0.0004, 8); view.x = W / 2 - u.x * view.z; view.y = H / 2 - u.y * view.z; saveViewSoon(); requestDraw();
       }); gb.textContent = '사진으로 가기';
       uw.appendChild(ub); uw.appendChild(gb); layersEl.appendChild(uw);
     });
@@ -1890,7 +1890,9 @@ button { cursor: pointer; }
     nameEl.value = f.n || ''; memoEl.value = f.m || '';
     renderSheetKinds();
     sheetEl.hidden = false; selIds = new Set([id]); requestDraw();
-    if (focusName) setTimeout(function () { nameEl.focus(); }, 50);
+    /* 펜으로 찍었을 때 바로 글자 칸에 들어가면 아이패드가 손글씨용 작은 키보드를 띄운다 → 손가락으로 누르게 둔다 */
+    /* 자동으로 글자 칸에 들어가면(손으로 누르지 않은 포커스) 아이패드가 작은 키보드를 띄울 때가 있다 → 직접 누르게 둔다 */
+    if (focusName) showTip('이름 칸을 손가락으로 눌러 입력하세요');
   }
   function renderSheetKinds() {
     var f = sheet && features.get(sheet.id); if (!f) return;
@@ -1986,7 +1988,7 @@ button { cursor: pointer; }
   });
 
   /* ---------- 터치·마우스 입력 ---------- */
-  var ptrs = new Map(), gesture = null, stroke = null, locked = false, penDown = false;
+  var ptrs = new Map(), gesture = null, stroke = null, locked = false, penDown = false, lastPtrType = '';
   function pos(e) { var r = canvas.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
 
   function textBox(f) {
@@ -2119,16 +2121,17 @@ button { cursor: pointer; }
     if (!gesture || ptrs.size < 2) return;
     var v = Array.from(ptrs.values()), a = v[0], b = v[1], g = gesture;
     var d = Math.hypot(a.x - b.x, a.y - b.y) || 1, m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-    var nz = clamp(g.v0.z * d / g.d0, 0.002, 8);
+    var nz = clamp(g.v0.z * d / g.d0, 0.0004, 8);
     var wx = (g.m0.x - g.v0.x) / g.v0.z, wy = (g.m0.y - g.v0.y) / g.v0.z;
     view.z = nz; view.x = m.x - wx * nz; view.y = m.y - wy * nz; saveViewSoon(); requestDraw();
   }
   function zoomAt(p, k) {
-    var nz = clamp(view.z * k, 0.002, 8), wx = (p.x - view.x) / view.z, wy = (p.y - view.y) / view.z;
+    var nz = clamp(view.z * k, 0.0004, 8), wx = (p.x - view.x) / view.z, wy = (p.y - view.y) / view.z;
     view.z = nz; view.x = p.x - wx * nz; view.y = p.y - wy * nz; saveViewSoon(); requestDraw();
   }
 
   canvas.addEventListener('pointerdown', function (e) {
+    lastPtrType = e.pointerType;
     if (!ready) return;
     e.preventDefault();
     if (!layersEl.hidden || !erasEl.hidden) { setLayersOpen(false); setErasOpen(false); return; }
