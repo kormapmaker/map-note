@@ -1735,6 +1735,13 @@ button { cursor: pointer; }
       var data; try { data = JSON.parse(rd.result); } catch (e) { showTip('파일을 읽지 못했어요'); return; }
       if (!data || !Array.isArray(data.features)) { showTip('지도 노트 파일이 아니에요'); return; }
       var n = 0;
+      /* 지우기 목록이 든 파일: 적힌 것만 한 번에 지운다 (되돌리기 가능) */
+      if (Array.isArray(data.remove) && data.remove.length) {
+        var rops = [];
+        data.remove.slice(0, 20000).forEach(function (id) { var f0 = typeof id === 'string' && features.get(id); if (f0) rops.push({ id: id, before: f0, after: null }); });
+        if (rops.length) commit(rops);
+        if (!data.features.length) { showTip(rops.length + '개를 지웠어요 (되돌리기 가능)'); return; }
+      }
       data.features.slice(0, 20000).forEach(function (f) {
         if (f && typeof f.id === 'string' && f.id && f.id.indexOf('/') < 0 && valid(f)) { features.set(f.id, f); writeDoc(f.id); n++; }
       });
